@@ -1,0 +1,8 @@
+// Copy this file to Config.local.xcconfig and fill real values.
+// Never commit Config.local.xcconfig.
+
+SUPABASE_URL = https://YOUR_PROJECT_ID.supabase.co
+SUPABASE_ANON_KEY = YOUR_SUPABASE_ANON_KEY
+REVENUECAT_PUBLIC_KEY = appl_YOUR_PUBLIC_SDK_KEY
+REVENUECAT_ENTITLEMENT_ID = pro
+

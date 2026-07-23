@@ -1,0 +1,7 @@
+#include? "Config.local.xcconfig"
+
+SUPABASE_URL = $(inherited)
+SUPABASE_ANON_KEY = $(inherited)
+REVENUECAT_PUBLIC_KEY = $(inherited)
+REVENUECAT_ENTITLEMENT_ID = pro
+

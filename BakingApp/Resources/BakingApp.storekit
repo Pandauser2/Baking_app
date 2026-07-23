@@ -1,0 +1,67 @@
+{
+  "identifier" : "BakingAppStoreKitConfig",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "monthly-pro",
+      "localizations" : [
+        {
+          "description" : "Monthly Pro access",
+          "displayName" : "Pro Monthly",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pandauser2.bakingapp.pro.monthly",
+      "referenceName" : "Pro Monthly",
+      "type" : "RecurringSubscription"
+    },
+    {
+      "displayPrice" : "39.99",
+      "familyShareable" : false,
+      "internalID" : "yearly-pro",
+      "localizations" : [
+        {
+          "description" : "Yearly Pro access",
+          "displayName" : "Pro Yearly",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pandauser2.bakingapp.pro.yearly",
+      "referenceName" : "Pro Yearly",
+      "type" : "RecurringSubscription"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "BakingApp",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_subscriptionRenewalRate" : "Monthly"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "pro-group",
+      "localizations" : [
+        {
+          "description" : "Pro access for baking guidance",
+          "displayName" : "Pro Subscription",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Pro Subscription",
+      "subscriptions" : [
+        "monthly-pro",
+        "yearly-pro"
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
+

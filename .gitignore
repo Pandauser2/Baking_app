@@ -1,0 +1,15 @@
+# Xcode
+DerivedData/
+build/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# SwiftPM
+.build/
+
+# Local environment configuration (never commit secrets)
+BakingApp/Resources/Config/Config.local.xcconfig
+BakingApp/Resources/Config/GoogleService-Info.plist
+

@@ -1,0 +1,134 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Xcode and simulator versions
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+
+      - name: Create CI placeholder app config (no secrets)
+        run: |
+          set -euo pipefail
+          cat > BakingApp/Resources/Config/Config.local.xcconfig <<'EOF'
+          SUPABASE_URL = https://ci-placeholder.supabase.co
+          SUPABASE_ANON_KEY = ci_placeholder_anon_key
+          REVENUECAT_PUBLIC_KEY = appl_ci_placeholder_public_key
+          REVENUECAT_ENTITLEMENT_ID = pro
+          EOF
+
+      - name: Confirm Firebase plist is absent in CI
+        run: |
+          set -euo pipefail
+          test ! -f BakingApp/Resources/Config/GoogleService-Info.plist
+
+      - name: Generate project from source-of-truth
+        run: |
+          set -euo pipefail
+          xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project BakingApp.xcodeproj -scheme BakingApp
+
+      - name: Select and boot simulator
+        run: |
+          set -euo pipefail
+
+          function first_device_id() {
+            local name="$1"
+            xcrun simctl list devices available | awk -v n="$name" '
+              index($0, n) && index($0, "(Booted)") == 0 {
+                if (match($0, /\(([0-9A-F-]{36})\)/)) {
+                  print substr($0, RSTART + 1, RLENGTH - 2);
+                  exit;
+                }
+              }'
+          }
+
+          DEVICE_ID="$(first_device_id "iPhone 16 Pro")"
+          if [[ -z "${DEVICE_ID}" ]]; then
+            DEVICE_ID="$(first_device_id "iPhone 16")"
+          fi
+          if [[ -z "${DEVICE_ID}" ]]; then
+            DEVICE_ID="$(xcrun simctl list devices available | awk '
+              /iPhone/ && index($0, "(Booted)") == 0 {
+                if (match($0, /\(([0-9A-F-]{36})\)/)) {
+                  print substr($0, RSTART + 1, RLENGTH - 2);
+                  exit;
+                }
+              }')"
+          fi
+
+          if [[ -z "${DEVICE_ID}" ]]; then
+            echo "No available iPhone simulator found."
+            exit 1
+          fi
+
+          echo "SIMULATOR_ID=${DEVICE_ID}" >> "$GITHUB_ENV"
+          xcrun simctl boot "${DEVICE_ID}" || true
+          xcrun simctl bootstatus "${DEVICE_ID}" -b
+          xcrun simctl list devices | grep "${DEVICE_ID}" || true
+
+      - name: Build Debug for iOS Simulator
+        run: |
+          set -euo pipefail
+          DESTINATION="id=${SIMULATOR_ID}"
+          mkdir -p build/logs
+          echo "Using destination: ${DESTINATION}"
+          xcodebuild \
+            -project BakingApp.xcodeproj \
+            -scheme BakingApp \
+            -configuration Debug \
+            -destination "$DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee build/logs/xcodebuild-build.log
+
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          DESTINATION="id=${SIMULATOR_ID}"
+          echo "Using destination: ${DESTINATION}"
+          xcodebuild \
+            -project BakingApp.xcodeproj \
+            -scheme BakingApp \
+            -destination "$DESTINATION" \
+            -only-testing:BakingAppTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee build/logs/xcodebuild-test.log
+
+      - name: Upload build/test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ci-logs
+          path: build/logs
+
