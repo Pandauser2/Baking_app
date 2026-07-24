@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           xcodebuild -resolvePackageDependencies -project BakingApp.xcodeproj -scheme BakingApp
 
-      - name: Select and boot simulator
+      - name: Select simulator
         run: |
           set -euo pipefail
 
@@ -94,8 +94,6 @@ jobs:
           fi
 
           echo "SIMULATOR_ID=${DEVICE_ID}" >> "$GITHUB_ENV"
-          xcrun simctl boot "${DEVICE_ID}" || true
-          xcrun simctl bootstatus "${DEVICE_ID}" -b
           xcrun simctl list devices | grep "${DEVICE_ID}" || true
 
       - name: Build Debug for iOS Simulator
