@@ -8,6 +8,12 @@ enum AnalyticsEventName: String {
     case paywallViewed = "paywall_viewed"
     case purchaseCompleted = "purchase_completed"
     case purchaseRestored = "purchase_restored"
+    case photoSelected = "photo_selected"
+    case uploadStarted = "upload_started"
+    case uploadCompleted = "upload_completed"
+    case analysisStarted = "analysis_started"
+    case analysisCompleted = "analysis_completed"
+    case analysisFailed = "analysis_failed"
 }
 
 protocol AnalyticsTracking {

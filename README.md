@@ -1,11 +1,12 @@
-# Baking App (Phase A Foundation)
+# Baking App (Phase A + Phase B Core)
 
-This repository contains Phase A of the iOS Sourdough Coach roadmap:
+This repository contains:
 - SwiftUI app shell and launch routing
 - Supabase email auth
 - Onboarding flow
 - RevenueCat paywall infrastructure
 - Firebase Analytics and Crashlytics wiring
+- Phase B loaf analysis flow (capture/select -> upload -> edge analysis -> result/history)
 - Focused unit tests
 
 ## Setup
@@ -27,5 +28,9 @@ This repository contains Phase A of the iOS Sourdough Coach roadmap:
 
 - Never commit `Config.local.xcconfig` or `GoogleService-Info.plist`.
 - No server-side keys are used in the app.
-- Supabase migration is in `supabase/migrations/0001_phase_a_users.sql`.
+- Supabase migrations are in:
+  - `supabase/migrations/0001_phase_a_users.sql`
+  - `supabase/migrations/0002_phase_b_loaf_scans.sql`
+- Deploy edge function:
+  - `supabase/functions/analyze-loaf/index.ts`
 

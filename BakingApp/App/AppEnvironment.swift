@@ -7,19 +7,22 @@ final class AppEnvironment: ObservableObject {
     let billingManager: BillingManager
     let onboardingStore: OnboardingStore
     let analytics: AnalyticsTracking
+    let loafAnalysisRepository: LoafAnalysisRepository
 
     init(
         configResult: Result<AppConfig, AppConfigError>,
         authManager: AuthManager,
         billingManager: BillingManager,
         onboardingStore: OnboardingStore,
-        analytics: AnalyticsTracking
+        analytics: AnalyticsTracking,
+        loafAnalysisRepository: LoafAnalysisRepository
     ) {
         self.configResult = configResult
         self.authManager = authManager
         self.billingManager = billingManager
         self.onboardingStore = onboardingStore
         self.analytics = analytics
+        self.loafAnalysisRepository = loafAnalysisRepository
     }
 
     static func live() -> AppEnvironment {
@@ -31,7 +34,8 @@ final class AppEnvironment: ObservableObject {
                 authManager: fallbackAuth,
                 billingManager: fallbackBilling,
                 onboardingStore: OnboardingStore(),
-                analytics: NoopAnalyticsTracker()
+                analytics: NoopAnalyticsTracker(),
+                loafAnalysisRepository: NoopLoafAnalysisRepository()
             )
         }
 
@@ -61,12 +65,17 @@ final class AppEnvironment: ObservableObject {
             let billingClient = RevenueCatBillingClient(entitlementID: config.revenueCatEntitlementID)
             let billingManager = BillingManager(client: billingClient)
             billingManager.configure(apiKey: config.revenueCatPublicKey)
+            let loafAnalysisRepository = SupabaseLoafAnalysisRepository(
+                supabaseURL: config.supabaseURL,
+                anonKey: config.supabaseAnonKey
+            )
             return AppEnvironment(
                 configResult: configResult,
                 authManager: authManager,
                 billingManager: billingManager,
                 onboardingStore: OnboardingStore(),
-                analytics: analytics
+                analytics: analytics,
+                loafAnalysisRepository: loafAnalysisRepository
             )
         case .failure:
             let fallbackAuth = AuthManager(client: NoopAuthClient())
@@ -76,7 +85,8 @@ final class AppEnvironment: ObservableObject {
                 authManager: fallbackAuth,
                 billingManager: fallbackBilling,
                 onboardingStore: OnboardingStore(),
-                analytics: NoopAnalyticsTracker()
+                analytics: NoopAnalyticsTracker(),
+                loafAnalysisRepository: NoopLoafAnalysisRepository()
             )
         }
     }
@@ -103,5 +113,12 @@ private struct NoopBillingClient: BillingClient {
 
 private struct NoopAnalyticsTracker: AnalyticsTracking {
     func track(_ event: AnalyticsEventName) {}
+}
+
+private struct NoopLoafAnalysisRepository: LoafAnalysisRepository {
+    func uploadImage(_ data: Data, userID: UUID) async throws -> String { throw AppError.configuration("Configuration missing") }
+    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafScan { throw AppError.configuration("Configuration missing") }
+    func fetchHistory() async throws -> [LoafScan] { [] }
+    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL { throw AppError.configuration("Configuration missing") }
 }
 

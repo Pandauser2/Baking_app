@@ -20,6 +20,11 @@ enum AppError: LocalizedError, Equatable {
     case purchaseCancelled
     case restoreFailed
     case offeringsUnavailable
+    case subscriptionRequired
+    case imageValidationFailed(String)
+    case uploadFailed
+    case analysisFailed
+    case malformedResponse
     case unknown(String)
 
     var errorDescription: String? {
@@ -38,6 +43,16 @@ enum AppError: LocalizedError, Equatable {
             return "We could not restore purchases. Please try again."
         case .offeringsUnavailable:
             return "Subscriptions are currently unavailable. Please try again later."
+        case .subscriptionRequired:
+            return "This feature requires an active Pro subscription."
+        case .imageValidationFailed(let message):
+            return message
+        case .uploadFailed:
+            return "Image upload failed. Please try again."
+        case .analysisFailed:
+            return "Analysis failed. Please try again."
+        case .malformedResponse:
+            return "We received an invalid analysis response. Please retry."
         case .unknown(let message):
             return message
         }

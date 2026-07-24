@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct HomeView: View {
+    @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var billingManager: BillingManager
 
     @State private var isShowingPaywall = false
+    @State private var showAnalysis = false
 
     var body: some View {
         NavigationStack {
@@ -34,6 +36,15 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
+                Button("Analyze Loaf") {
+                    if billingManager.hasProEntitlement {
+                        showAnalysis = true
+                    } else {
+                        isShowingPaywall = true
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
                 Button("Refresh Entitlement") {
                     Task { await billingManager.refreshEntitlement() }
                 }
@@ -51,6 +62,14 @@ struct HomeView: View {
             .navigationTitle("Home")
             .sheet(isPresented: $isShowingPaywall) {
                 PaywallView()
+            }
+            .navigationDestination(isPresented: $showAnalysis) {
+                AnalysisView(
+                    viewModel: AnalysisViewModel(
+                        repository: environment.loafAnalysisRepository,
+                        analytics: environment.analytics
+                    )
+                )
             }
         }
     }

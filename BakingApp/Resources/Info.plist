@@ -28,6 +28,10 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>
 	<string>$(SUPABASE_URL)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture loaf photos for AI analysis.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select loaf photos for AI analysis.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
