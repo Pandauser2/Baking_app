@@ -32,7 +32,9 @@ final class ImageValidatorTests: XCTestCase {
     }
 
     private func solidImage(color: UIColor, size: CGSize) -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { context in
             color.setFill()
             context.fill(CGRect(origin: .zero, size: size))
