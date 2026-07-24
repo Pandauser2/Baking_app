@@ -23,6 +23,18 @@ final class AppEnvironment: ObservableObject {
     }
 
     static func live() -> AppEnvironment {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            let fallbackAuth = AuthManager(client: NoopAuthClient())
+            let fallbackBilling = BillingManager(client: NoopBillingClient())
+            return AppEnvironment(
+                configResult: .failure(.missingValue("Skipping live services during tests")),
+                authManager: fallbackAuth,
+                billingManager: fallbackBilling,
+                onboardingStore: OnboardingStore(),
+                analytics: NoopAnalyticsTracker()
+            )
+        }
+
         let configResult: Result<AppConfig, AppConfigError>
         do {
             let config = try AppConfig.load()
