@@ -23,15 +23,15 @@ final class AppEnvironment: ObservableObject {
     }
 
     static func live() -> AppEnvironment {
-        let configResult: Result<AppConfig, AppConfigError> = Result(catching: {
-            do {
-                return try AppConfig.load()
-            } catch let configError as AppConfigError {
-                throw configError
-            } catch {
-                throw AppConfigError.missingValue("Unexpected configuration error: \(error.localizedDescription)")
-            }
-        })
+        let configResult: Result<AppConfig, AppConfigError>
+        do {
+            let config = try AppConfig.load()
+            configResult = .success(config)
+        } catch let configError as AppConfigError {
+            configResult = .failure(configError)
+        } catch {
+            configResult = .failure(.missingValue("Unexpected configuration error: \(error.localizedDescription)"))
+        }
         #if DEBUG
         assertRequiredConfiguration(configResult)
         #endif
