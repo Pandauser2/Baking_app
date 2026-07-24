@@ -48,6 +48,10 @@ struct AppConfig {
 
 #if DEBUG
 func assertRequiredConfiguration(_ result: Result<AppConfig, AppConfigError>) {
+    if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+        return
+    }
+
     if case .failure(let error) = result {
         switch error {
         case .missingValue(let message), .invalidURL(let message):
