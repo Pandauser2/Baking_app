@@ -84,13 +84,10 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
     }
 
     func signedImageURL(path: String, expiresIn: TimeInterval = 1800) async throws -> URL {
-        let signedURLString = try await client.storage
+        let signedURL = try await client.storage
             .from("loaf-images")
             .createSignedURL(path: path, expiresIn: Int(expiresIn))
-        guard let url = URL(string: signedURLString) else {
-            throw AppError.unknown("Invalid signed image URL.")
-        }
-        return url
+        return signedURL
     }
 
     static func makeStoragePath(userID: UUID, date: Date, imageID: UUID) -> String {
