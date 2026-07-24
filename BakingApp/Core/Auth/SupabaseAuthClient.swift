@@ -19,15 +19,8 @@ final class SupabaseAuthClient: AuthClient {
 
     func signUp(email: String, password: String) async throws -> UserSession {
         let response = try await client.auth.signUp(email: email, password: password)
-        if let user = response.user {
-            return UserSession(userID: user.id, email: user.email)
-        }
-
-        if let restored = try await restoreSession() {
-            return restored
-        }
-
-        throw AppError.authenticationFailed
+        let user = response.user
+        return UserSession(userID: user.id, email: user.email)
     }
 
     func signIn(email: String, password: String) async throws -> UserSession {

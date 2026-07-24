@@ -47,11 +47,16 @@ struct PaywallView: View {
                         }
                     }
                 case .failure(let message):
-                    ContentUnavailableView(
-                        "Subscriptions unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(message)
-                    )
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.title2)
+                        Text("Subscriptions unavailable")
+                            .font(.headline)
+                        Text(message)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
                 }
             }
             .navigationTitle("Baking App Pro")
