@@ -399,33 +399,33 @@ private struct TimelineRow: Decodable {
     }
 }
 
-private struct AnalyzeStarterResponseWrapper: Decodable {
-    let promptVersion: String
-    let model: String
-    let analysis: StarterAIResponse
-
-    enum CodingKeys: String, CodingKey {
-        case promptVersion = "prompt_version"
-        case model
-        case analysis
-    }
-}
-
 enum StarterAnalyzeResponseParser {
     static func decode(_ data: Data) throws -> StarterAnalyzeResult {
-        let decoder = JSONDecoder()
-        let wrapped = try decoder.decode(AnalyzeStarterResponseWrapper.self, from: data)
-        guard !wrapped.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let json = try JSONSerialization.jsonObject(with: data)
+        guard let root = json as? [String: Any] else {
             throw AppError.malformedResponse
         }
-        guard !wrapped.promptVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let model = root["model"] as? String else {
             throw AppError.malformedResponse
         }
-        try StarterAIContractValidator.validate(wrapped.analysis)
+        guard let promptVersion = root["prompt_version"] as? String else {
+            throw AppError.malformedResponse
+        }
+        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AppError.malformedResponse
+        }
+        guard !promptVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AppError.malformedResponse
+        }
+        guard let analysisObject = root["analysis"] else {
+            throw AppError.malformedResponse
+        }
+        let analysisData = try JSONSerialization.data(withJSONObject: analysisObject)
+        let analysis = try StarterAIContractValidator.decodeStrict(analysisData)
         return StarterAnalyzeResult(
-            model: wrapped.model,
-            promptVersion: wrapped.promptVersion,
-            analysis: wrapped.analysis
+            model: model,
+            promptVersion: promptVersion,
+            analysis: analysis
         )
     }
 }
