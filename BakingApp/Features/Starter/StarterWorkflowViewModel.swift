@@ -226,7 +226,7 @@ final class StarterWorkflowViewModel: ObservableObject {
         if let appError = error as? AppError {
             return appError.localizedDescription
         }
-        return AppError.unknown("Something went wrong. Please try again.").localizedDescription ?? "Something went wrong."
+        return AppError.unknown("Something went wrong. Please try again.").localizedDescription
     }
 }
 

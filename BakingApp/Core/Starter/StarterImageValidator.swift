@@ -122,17 +122,17 @@ struct StarterImageValidator {
 
         let data = CFDataGetBytePtr(pixelData)
         let bytesPerPixel = 4
-        let stride = width * bytesPerPixel
+        let rowStride = width * bytesPerPixel
         var edgeMagnitudeTotal: Double = 0
         var samples = 0
         let step = max(1, min(width, height) / 80)
         if width <= step || height <= step { return 0.0 }
 
-        for y in stride(from: step, to: height - step, by: step) {
-            for x in stride(from: step, to: width - step, by: step) {
-                let center = luminance(data, x: x, y: y, stride: stride)
-                let right = luminance(data, x: x + step, y: y, stride: stride)
-                let down = luminance(data, x: x, y: y + step, stride: stride)
+        for y in Swift.stride(from: step, to: height - step, by: step) {
+            for x in Swift.stride(from: step, to: width - step, by: step) {
+                let center = luminance(data, x: x, y: y, stride: rowStride)
+                let right = luminance(data, x: x + step, y: y, stride: rowStride)
+                let down = luminance(data, x: x, y: y + step, stride: rowStride)
                 edgeMagnitudeTotal += abs(center - right) + abs(center - down)
                 samples += 1
             }

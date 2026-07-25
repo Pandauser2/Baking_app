@@ -83,20 +83,17 @@ struct StarterScanView: View {
             await viewModel.handleSelectedPhoto()
         }
         .sheet(isPresented: $showCamera) {
-            CameraPicker(image: Binding(
-                get: { viewModel.selectedImage },
-                set: { image in
-                    guard let image, let data = image.jpegData(compressionQuality: 0.95) else { return }
-                    do {
-                        let validated = try StarterImageValidator().validate(data: data)
-                        viewModel.selectedImage = UIImage(data: validated.jpegData)
-                        viewModel.validatedImage = validated
-                        viewModel.errorMessage = nil
-                    } catch {
-                        viewModel.errorMessage = (error as? AppError)?.localizedDescription ?? "Invalid image."
-                    }
+            CameraPicker { image in
+                guard let data = image.jpegData(compressionQuality: 0.95) else { return }
+                do {
+                    let validated = try StarterImageValidator().validate(data: data)
+                    viewModel.selectedImage = UIImage(data: validated.jpegData)
+                    viewModel.validatedImage = validated
+                    viewModel.errorMessage = nil
+                } catch {
+                    viewModel.errorMessage = (error as? AppError)?.localizedDescription ?? "Invalid image."
                 }
-            ))
+            }
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView()

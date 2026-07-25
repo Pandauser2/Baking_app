@@ -150,8 +150,8 @@ final class SupabaseStarterRepository: StarterRepository {
             try await client.storage
                 .from("starter-images")
                 .upload(
-                    path: path,
-                    file: data,
+                    path,
+                    data: data,
                     options: FileOptions(cacheControl: "3600", contentType: "image/jpeg", upsert: false)
                 )
             return path

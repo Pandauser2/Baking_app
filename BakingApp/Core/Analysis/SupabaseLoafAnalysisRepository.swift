@@ -24,8 +24,8 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
             try await client.storage
                 .from("loaf-images")
                 .upload(
-                    path: path,
-                    file: data,
+                    path,
+                    data: data,
                     options: FileOptions(
                         cacheControl: "3600",
                         contentType: "image/jpeg",
