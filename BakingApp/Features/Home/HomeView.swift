@@ -6,7 +6,7 @@ struct HomeView: View {
     @EnvironmentObject private var billingManager: BillingManager
 
     @State private var isShowingPaywall = false
-    @State private var showAnalysis = false
+    @State private var showStarterWorkflow = false
 
     var body: some View {
         NavigationStack {
@@ -36,14 +36,14 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Analyze Loaf") {
-                    if billingManager.hasProEntitlement {
-                        showAnalysis = true
-                    } else {
-                        isShowingPaywall = true
-                    }
+                Button("Starter Workflow") {
+                    showStarterWorkflow = true
                 }
                 .buttonStyle(.borderedProminent)
+
+                Text("Loaf analysis is hidden from Home until Phase C.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
 
                 Button("Refresh Entitlement") {
                     Task { await billingManager.refreshEntitlement() }
@@ -63,11 +63,12 @@ struct HomeView: View {
             .sheet(isPresented: $isShowingPaywall) {
                 PaywallView()
             }
-            .navigationDestination(isPresented: $showAnalysis) {
-                AnalysisView(
-                    viewModel: AnalysisViewModel(
-                        repository: environment.loafAnalysisRepository,
-                        analytics: environment.analytics
+            .navigationDestination(isPresented: $showStarterWorkflow) {
+                StarterListView(
+                    viewModel: StarterWorkflowViewModel(
+                        repository: environment.starterRepository,
+                        analytics: environment.analytics,
+                        isProUser: billingManager.hasProEntitlement
                     )
                 )
             }

@@ -8,6 +8,7 @@ final class AppEnvironment: ObservableObject {
     let onboardingStore: OnboardingStore
     let analytics: AnalyticsTracking
     let loafAnalysisRepository: LoafAnalysisRepository
+    let starterRepository: StarterRepository
 
     init(
         configResult: Result<AppConfig, AppConfigError>,
@@ -15,7 +16,8 @@ final class AppEnvironment: ObservableObject {
         billingManager: BillingManager,
         onboardingStore: OnboardingStore,
         analytics: AnalyticsTracking,
-        loafAnalysisRepository: LoafAnalysisRepository
+        loafAnalysisRepository: LoafAnalysisRepository,
+        starterRepository: StarterRepository
     ) {
         self.configResult = configResult
         self.authManager = authManager
@@ -23,6 +25,7 @@ final class AppEnvironment: ObservableObject {
         self.onboardingStore = onboardingStore
         self.analytics = analytics
         self.loafAnalysisRepository = loafAnalysisRepository
+        self.starterRepository = starterRepository
     }
 
     static func live() -> AppEnvironment {
@@ -35,7 +38,8 @@ final class AppEnvironment: ObservableObject {
                 billingManager: fallbackBilling,
                 onboardingStore: OnboardingStore(),
                 analytics: NoopAnalyticsTracker(),
-                loafAnalysisRepository: NoopLoafAnalysisRepository()
+                loafAnalysisRepository: NoopLoafAnalysisRepository(),
+                starterRepository: NoopStarterRepository()
             )
         }
 
@@ -69,13 +73,18 @@ final class AppEnvironment: ObservableObject {
                 supabaseURL: config.supabaseURL,
                 anonKey: config.supabaseAnonKey
             )
+            let starterRepository = SupabaseStarterRepository(
+                supabaseURL: config.supabaseURL,
+                anonKey: config.supabaseAnonKey
+            )
             return AppEnvironment(
                 configResult: configResult,
                 authManager: authManager,
                 billingManager: billingManager,
                 onboardingStore: OnboardingStore(),
                 analytics: analytics,
-                loafAnalysisRepository: loafAnalysisRepository
+                loafAnalysisRepository: loafAnalysisRepository,
+                starterRepository: starterRepository
             )
         case .failure:
             let fallbackAuth = AuthManager(client: NoopAuthClient())
@@ -86,7 +95,8 @@ final class AppEnvironment: ObservableObject {
                 billingManager: fallbackBilling,
                 onboardingStore: OnboardingStore(),
                 analytics: NoopAnalyticsTracker(),
-                loafAnalysisRepository: NoopLoafAnalysisRepository()
+                loafAnalysisRepository: NoopLoafAnalysisRepository(),
+                starterRepository: NoopStarterRepository()
             )
         }
     }
@@ -120,5 +130,37 @@ private struct NoopLoafAnalysisRepository: LoafAnalysisRepository {
     func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafScan { throw AppError.configuration("Configuration missing") }
     func fetchHistory() async throws -> [LoafScan] { [] }
     func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL { throw AppError.configuration("Configuration missing") }
+}
+
+private struct NoopStarterRepository: StarterRepository {
+    func listStarters() async throws -> [Starter] { [] }
+    func createStarter(name: String, hydrationPreference: Double?, active: Bool) async throws -> Starter {
+        throw AppError.configuration("Configuration missing")
+    }
+    func setActiveStarter(starterID: UUID) async throws {}
+    func fetchStarter(starterID: UUID) async throws -> Starter {
+        throw AppError.configuration("Configuration missing")
+    }
+    func fetchStarterState(starterID: UUID) async throws -> StarterState? { nil }
+    func createFeedingLog(starterID: UUID, loggedAt: Date, roomTempC: Double, flourG: Int?, waterG: Int?, starterG: Int?, notes: String?) async throws -> FeedingLog {
+        throw AppError.configuration("Configuration missing")
+    }
+    func listFeedingLogs(starterID: UUID) async throws -> [FeedingLog] { [] }
+    func uploadStarterImage(data: Data, userID: UUID, starterID: UUID, date: Date) async throws -> String {
+        throw AppError.configuration("Configuration missing")
+    }
+    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAIResponse {
+        throw AppError.configuration("Configuration missing")
+    }
+    func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {
+        throw AppError.configuration("Configuration missing")
+    }
+    func listTimeline(starterID: UUID) async throws -> [StarterTimelineItem] { [] }
+    func updateRecommendationOutcome(recommendationID: UUID, outcome: RecommendationOutcome) async throws -> Recommendation {
+        throw AppError.configuration("Configuration missing")
+    }
+    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        throw AppError.configuration("Configuration missing")
+    }
 }
 

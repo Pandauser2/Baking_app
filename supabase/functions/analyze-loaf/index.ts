@@ -180,7 +180,7 @@ async function callOpenAI(imageBytes: Uint8Array, apiKey: string): Promise<AiPay
   return validateAiPayload(payload);
 }
 
-serve(async (req) => {
+const handler = async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok");
   }
@@ -261,5 +261,9 @@ serve(async (req) => {
       error: error instanceof Error ? error.message : "Unexpected error",
     });
   }
-});
+};
+
+if (import.meta.main) {
+  serve(handler);
+}
 

@@ -35,6 +35,11 @@ jobs:
           set -euo pipefail
           brew install xcodegen
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
       - name: Create CI placeholder app config (no secrets)
         run: |
           set -euo pipefail
@@ -123,6 +128,12 @@ jobs:
             -only-testing:BakingAppTests \
             CODE_SIGNING_ALLOWED=NO \
             test | tee build/logs/xcodebuild-test.log
+
+      - name: Run Edge Function tests
+        run: |
+          set -euo pipefail
+          deno test supabase/functions/analyze-loaf/index_test.ts
+          deno test supabase/functions/analyze-starter/index_test.ts
 
       - name: Upload build/test logs on failure
         if: failure()

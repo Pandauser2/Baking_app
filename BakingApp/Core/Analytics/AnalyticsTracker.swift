@@ -14,6 +14,12 @@ enum AnalyticsEventName: String {
     case analysisStarted = "analysis_started"
     case analysisCompleted = "analysis_completed"
     case analysisFailed = "analysis_failed"
+    case starterCreated = "starter_created"
+    case feedingLogged = "feeding_logged"
+    case firstScanUploaded = "first_scan_uploaded"
+    case firstAIRecommendationViewed = "first_ai_recommendation_viewed"
+    case firstRecommendationMarkedOutcome = "first_recommendation_marked_outcome"
+    case scanRepeatedWithin7d = "scan_repeated_within_7d"
 }
 
 protocol AnalyticsTracking {
