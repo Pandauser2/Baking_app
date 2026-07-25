@@ -121,8 +121,9 @@ struct StarterImageValidator {
         }
 
         let data = CFDataGetBytePtr(pixelData)
-        let bytesPerPixel = 4
-        let rowStride = width * bytesPerPixel
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 1)
+        let rowStride = cgImage.bytesPerRow
+        guard bytesPerPixel >= 3 else { return 0.0 }
         var edgeMagnitudeTotal: Double = 0
         var samples = 0
         let step = max(1, min(width, height) / 80)
@@ -145,7 +146,7 @@ struct StarterImageValidator {
 
     private func luminance(_ data: UnsafePointer<UInt8>?, x: Int, y: Int, stride: Int) -> Double {
         guard let data else { return 0 }
-        let offset = y * stride + x * 4
+        let offset = y * stride + x * bytesPerPixel
         let r = Double(data[offset])
         let g = Double(data[offset + 1])
         let b = Double(data[offset + 2])
