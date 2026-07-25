@@ -29,7 +29,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
     func testPersistenceRetryDoesNotRecallAI() async {
         let starterID = UUID()
         let repo = FakeStarterRepository()
-        repo.nextAnalyzeResponse = makeAIResponse()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
         repo.persistError = AppError.unknown("Save failed")
         let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
         viewModel.validatedImage = StarterValidatedImage(
@@ -66,7 +66,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
     func testStarterStateUpdateMappingAfterSave() async {
         let starterID = UUID()
         let repo = FakeStarterRepository()
-        repo.nextAnalyzeResponse = makeAIResponse()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
         repo.nextStarterState = StarterState(
             starterID: starterID,
             userID: UUID(),
@@ -92,7 +92,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
     func testPersistenceMappingSendsExpectedFields() async {
         let starterID = UUID()
         let repo = FakeStarterRepository()
-        repo.nextAnalyzeResponse = makeAIResponse()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
         let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
         viewModel.validatedImage = StarterValidatedImage(
             jpegData: Data(repeating: 1, count: 12_000),
@@ -104,7 +104,8 @@ final class StarterWorkflowViewModelTests: XCTestCase {
         await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
         await viewModel.savePendingAnalysis(starterID: starterID)
 
-        XCTAssertEqual(repo.lastPersistInput?.promptVersion, "v1")
+        XCTAssertEqual(repo.lastPersistInput?.promptVersion, "v1-server")
+        XCTAssertEqual(repo.lastPersistInput?.model, "gpt-4o-mini")
         XCTAssertEqual(repo.lastPersistInput?.response.starterState, "active")
         XCTAssertEqual(repo.lastPersistInput?.qualityIssue, "slightly dark")
     }
@@ -131,6 +132,14 @@ final class StarterWorkflowViewModelTests: XCTestCase {
             riskFlags: [],
             compareToPrevious: .init(changed: true, explanation: "More bubbles"),
             starterState: "active"
+        )
+    }
+
+    private func makeAnalyzeResult() -> StarterAnalyzeResult {
+        StarterAnalyzeResult(
+            model: "gpt-4o-mini",
+            promptVersion: "v1-server",
+            analysis: makeAIResponse()
         )
     }
 
@@ -165,7 +174,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
 
 private final class FakeStarterRepository: StarterRepository {
     var starters: [Starter]
-    var nextAnalyzeResponse: StarterAIResponse?
+    var nextAnalyzeResult: StarterAnalyzeResult?
     var nextStarterState: StarterState?
     var timeline: [StarterTimelineItem] = []
     var persistError: Error?
@@ -202,18 +211,22 @@ private final class FakeStarterRepository: StarterRepository {
     func uploadStarterImage(data: Data, userID: UUID, starterID: UUID, date: Date) async throws -> String {
         "path/\(starterID).jpg"
     }
-    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAIResponse {
+    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAnalyzeResult {
         analyzeCallCount += 1
-        return nextAnalyzeResponse ?? StarterAIResponse(
-            scanType: "starter",
-            observations: ["Bubbles visible"],
-            diagnosis: ["active"],
-            confidence: 0.7,
-            nextSteps: [.init(instruction: "Feed now", timeWindowHours: 12)],
-            humanExplanation: "Looks active.",
-            riskFlags: [],
-            compareToPrevious: .init(changed: true, explanation: "More bubbles"),
-            starterState: "active"
+        return nextAnalyzeResult ?? StarterAnalyzeResult(
+            model: "gpt-4o-mini",
+            promptVersion: "v1",
+            analysis: StarterAIResponse(
+                scanType: "starter",
+                observations: ["Bubbles visible"],
+                diagnosis: ["active"],
+                confidence: 0.7,
+                nextSteps: [.init(instruction: "Feed now", timeWindowHours: 12)],
+                humanExplanation: "Looks active.",
+                riskFlags: [],
+                compareToPrevious: .init(changed: true, explanation: "More bubbles"),
+                starterState: "active"
+            )
         )
     }
     func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {

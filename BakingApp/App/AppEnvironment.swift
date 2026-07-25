@@ -149,7 +149,7 @@ private struct NoopStarterRepository: StarterRepository {
     func uploadStarterImage(data: Data, userID: UUID, starterID: UUID, date: Date) async throws -> String {
         throw AppError.configuration("Configuration missing")
     }
-    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAIResponse {
+    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAnalyzeResult {
         throw AppError.configuration("Configuration missing")
     }
     func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {

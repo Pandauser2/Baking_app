@@ -134,6 +134,7 @@ jobs:
           set -euo pipefail
           deno test supabase/functions/analyze-loaf/index_test.ts
           deno test supabase/functions/analyze-starter/index_test.ts
+          deno test --allow-read supabase/migrations/0004_phase_b_persist_starter_analysis_hardening_test.ts
 
       - name: Upload build/test logs on failure
         if: failure()

@@ -160,7 +160,7 @@ final class SupabaseStarterRepository: StarterRepository {
         }
     }
 
-    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String = "v1") async throws -> StarterAIResponse {
+    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String = "v1") async throws -> StarterAnalyzeResult {
         let authSession = try await client.auth.session
         let payload = AnalyzeStarterPayload(starterID: starterID, imagePath: imagePath, promptVersion: promptVersion)
 
@@ -183,10 +183,7 @@ final class SupabaseStarterRepository: StarterRepository {
         guard 200..<300 ~= httpResponse.statusCode else {
             throw AppError.analysisFailed
         }
-        if let wrapped = try? decode(AnalyzeStarterResponseWrapper.self, from: data) {
-            return wrapped.analysis
-        }
-        return try StarterAIContractValidator.decodeStrict(data)
+        return try StarterAnalyzeResponseParser.decode(data)
     }
 
     func persistStarterAnalysis(
@@ -411,6 +408,25 @@ private struct AnalyzeStarterResponseWrapper: Decodable {
         case promptVersion = "prompt_version"
         case model
         case analysis
+    }
+}
+
+enum StarterAnalyzeResponseParser {
+    static func decode(_ data: Data) throws -> StarterAnalyzeResult {
+        let decoder = JSONDecoder()
+        let wrapped = try decoder.decode(AnalyzeStarterResponseWrapper.self, from: data)
+        guard !wrapped.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AppError.malformedResponse
+        }
+        guard !wrapped.promptVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AppError.malformedResponse
+        }
+        try StarterAIContractValidator.validate(wrapped.analysis)
+        return StarterAnalyzeResult(
+            model: wrapped.model,
+            promptVersion: wrapped.promptVersion,
+            analysis: wrapped.analysis
+        )
     }
 }
 

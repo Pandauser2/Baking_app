@@ -5,6 +5,7 @@ const PROMPT_VERSION = "v1";
 const MAX_IMAGE_BYTES = 8_000_000;
 const MIN_IMAGE_BYTES = 8_000;
 const MIN_DIMENSION = 512;
+const OPENAI_TIMEOUT_MS = 20_000;
 
 export type AnalyzeStarterRequest = {
   starter_id: string;
@@ -333,6 +334,7 @@ export async function callOpenAIWithRetry(
   imageBytes: Uint8Array,
   context: LoadedContext,
   fetchFn: typeof fetch = fetch,
+  timeoutMs: number = OPENAI_TIMEOUT_MS,
 ): Promise<StarterAIResponse> {
   const base64 = toBase64(imageBytes);
   const messages: OpenAIMessage[] = [
@@ -351,19 +353,33 @@ export async function callOpenAIWithRetry(
     if (extraUserInstruction) {
       extraMessages.push({ role: "user", content: extraUserInstruction });
     }
-    const response = await fetchFn("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: extraMessages,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort("request_timeout"), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetchFn("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          messages: extraMessages,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      if (message.includes("abort") || message.includes("timeout")) {
+        throw new Error("provider_timeout");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       if (response.status >= 500 && response.status <= 599) {
@@ -384,7 +400,7 @@ export async function callOpenAIWithRetry(
       break;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (attempt === 0 && (message === "provider_5xx" || message.includes("timeout"))) {
+      if (attempt === 0 && (message === "provider_5xx" || message === "provider_timeout")) {
         continue;
       }
       throw error;

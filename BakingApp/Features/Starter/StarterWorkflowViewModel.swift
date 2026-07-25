@@ -28,6 +28,7 @@ final class StarterWorkflowViewModel: ObservableObject {
     private var didTrackFirstRecommendationView = false
     private var didTrackFirstOutcome = false
     private var lastAnalyzeDate: Date?
+    private var pendingAnalyzeResult: StarterAnalyzeResult?
 
     init(
         repository: StarterRepository,
@@ -141,6 +142,7 @@ final class StarterWorkflowViewModel: ObservableObject {
             errorMessage = nil
         } catch {
             pendingAIResponse = nil
+            pendingAnalyzeResult = nil
             persistedIDs = nil
             errorMessage = userMessage(error)
         }
@@ -172,7 +174,9 @@ final class StarterWorkflowViewModel: ObservableObject {
             }
             lastAnalyzeDate = Date()
             pendingImagePath = path
-            pendingAIResponse = try await repository.analyzeStarter(starterID: starterID, imagePath: path, promptVersion: "v1")
+            let analyzeResult = try await repository.analyzeStarter(starterID: starterID, imagePath: path, promptVersion: "v1")
+            pendingAnalyzeResult = analyzeResult
+            pendingAIResponse = analyzeResult.analysis
             persistedIDs = nil
         } catch {
             errorMessage = userMessage(error)
@@ -180,7 +184,10 @@ final class StarterWorkflowViewModel: ObservableObject {
     }
 
     func savePendingAnalysis(starterID: UUID) async {
-        guard let pendingAIResponse, let pendingImagePath else {
+        guard
+            let pendingAnalyzeResult,
+            let pendingImagePath
+        else {
             errorMessage = "No analysis result available to save."
             return
         }
@@ -192,9 +199,9 @@ final class StarterWorkflowViewModel: ObservableObject {
                 imagePath: pendingImagePath,
                 qualityScore: validatedImage?.qualityScore,
                 qualityIssue: validatedImage?.qualityIssue,
-                model: "openai",
-                promptVersion: "v1",
-                response: pendingAIResponse
+                model: pendingAnalyzeResult.model,
+                promptVersion: pendingAnalyzeResult.promptVersion,
+                response: pendingAnalyzeResult.analysis
             )
             persistedIDs = ids
             await loadStarterState(starterID: starterID)

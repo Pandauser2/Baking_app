@@ -90,10 +90,12 @@ Deno.test("empty recommendation is rejected", () => {
 
 Deno.test("provider timeout retries once", async () => {
   let calls = 0;
-  const mockFetch: typeof fetch = async () => {
+  const mockFetch: typeof fetch = async (_input, init) => {
     calls += 1;
     if (calls === 1) {
-      throw new Error("timeout");
+      return await new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("AbortError")), { once: true });
+      });
     }
     return new Response(
       JSON.stringify({
@@ -116,6 +118,7 @@ Deno.test("provider timeout retries once", async () => {
       recent_outcomes: [],
     },
     mockFetch,
+    5,
   );
   assertEquals(result.scan_type, "starter");
   assertEquals(calls, 2);

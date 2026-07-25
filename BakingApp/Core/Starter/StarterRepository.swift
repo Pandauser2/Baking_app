@@ -24,6 +24,12 @@ struct PersistedStarterAnalysisIDs: Codable, Equatable {
     }
 }
 
+struct StarterAnalyzeResult: Equatable {
+    let model: String
+    let promptVersion: String
+    let analysis: StarterAIResponse
+}
+
 protocol StarterRepository {
     func listStarters() async throws -> [Starter]
     func createStarter(name: String, hydrationPreference: Double?, active: Bool) async throws -> Starter
@@ -43,7 +49,7 @@ protocol StarterRepository {
     func listFeedingLogs(starterID: UUID) async throws -> [FeedingLog]
 
     func uploadStarterImage(data: Data, userID: UUID, starterID: UUID, date: Date) async throws -> String
-    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAIResponse
+    func analyzeStarter(starterID: UUID, imagePath: String, promptVersion: String) async throws -> StarterAnalyzeResult
     func persistStarterAnalysis(
         starterID: UUID,
         imagePath: String,
