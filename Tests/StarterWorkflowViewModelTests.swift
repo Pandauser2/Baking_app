@@ -52,7 +52,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
 
     func testRecommendationOutcomeTransitionUpdatesRecommendation() async {
         let starterID = UUID()
-        let recommendation = makeRecommendation(outcome: .unknown.rawValue)
+        let recommendation = makeRecommendation(outcome: RecommendationOutcome.unknown.rawValue)
         let repo = FakeStarterRepository()
         repo.timeline = [StarterTimelineItem(id: UUID(), scan: makeScan(starterID: starterID), analysis: nil, recommendation: recommendation)]
         let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
@@ -74,7 +74,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
             updatedFromScanID: UUID(),
             updatedAt: Date()
         )
-        repo.timeline = [StarterTimelineItem(id: UUID(), scan: makeScan(starterID: starterID), analysis: nil, recommendation: makeRecommendation(outcome: .unknown.rawValue))]
+        repo.timeline = [StarterTimelineItem(id: UUID(), scan: makeScan(starterID: starterID), analysis: nil, recommendation: makeRecommendation(outcome: RecommendationOutcome.unknown.rawValue))]
         let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
         viewModel.validatedImage = StarterValidatedImage(
             jpegData: Data(repeating: 1, count: 12_000),
