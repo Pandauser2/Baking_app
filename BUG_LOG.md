@@ -22,12 +22,14 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-26 | 1.0 / 1 | Added BUG-002 paywall offerings failure trap issue. |
 | 2026-07-25 | 1.0 / 1 | Initial bug log created. Added BUG-001. |
 
 ## Bug Summary
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
 | BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Open | Weak signup password shows incorrect generic error |
 
 ## Detailed Bugs
@@ -90,6 +92,60 @@ Use a stronger password with at least 8 characters.
 - Clear password guidance is shown.
 - Signup errors never use sign-in wording.
 - Existing sign-in behavior remains unchanged.
+- Tests and CI pass.
+
+### BUG-002 — Paywall traps user when subscriptions are unavailable
+
+- **Date found:** 2026-07-25
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Area:** Monetization — Paywall
+- **Priority:** P1
+- **Status:** Open
+
+#### Description
+
+When RevenueCat offerings fail to load, the paywall shows "Subscriptions unavailable" but provides no visible back or close button. The user becomes trapped on the paywall.
+
+#### Steps to reproduce
+
+1. Launch the app.
+2. Open the paywall.
+3. Encounter an offerings-load failure.
+4. Observe the failure screen.
+
+#### Actual result
+
+- No visible close or back button.
+- No retry button.
+- User cannot clearly return to the app.
+
+#### Expected result
+
+- Visible close button in all paywall states.
+- Retry button in failure state.
+- Swipe-to-dismiss preserved.
+- Pro gating remains enforced.
+
+#### Confirmed workaround
+
+Swipe down on the sheet or relaunch the app.
+
+#### Proposed solution
+
+1. Add `@Environment(\.dismiss)` to `PaywallView`.
+2. Add a top-right `xmark` button.
+3. Add accessibility label "Close paywall".
+4. Add Retry button calling `loadOfferings()`.
+5. Preserve purchase, restore, and entitlement behavior.
+6. Add focused tests.
+
+#### Acceptance criteria
+
+- Paywall always has a visible dismiss control.
+- Retry works after offerings failure.
+- Non-Pro users cannot bypass gating.
+- Existing purchase/restore flow still works.
 - Tests and CI pass.
 
 ## New Bug Template
