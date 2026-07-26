@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-26 | 1.0 / 1 | Added BUG-005 (fixed) for missing `user_id` in starter/feeding inserts and BUG-006 (open) for developer-scaffold Home screen. |
 | 2026-07-26 | 1.0 / 1 | Added and fixed BUG-004 email confirmation callback redirect. |
 | 2026-07-26 | 1.0 / 1 | Added BUG-003 navigation back/close visibility issue. |
 | 2026-07-26 | 1.0 / 1 | Added BUG-002 paywall offerings failure trap issue. |
@@ -31,6 +32,8 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
+| BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Fixed | Starter and feeding inserts omit required user_id |
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
 | BUG-003 | 2026-07-26 | Navigation | P1 | Open | Multiple app screens lack visible back navigation |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
@@ -229,6 +232,57 @@ Supabase confirmation email redirected to `http://localhost:3000/?code=...`, whi
 - Successful callbacks sign the user in through normal app routing.
 - Invalid/expired callbacks show safe user-facing errors.
 - Sensitive callback/auth data is not logged.
+
+### BUG-005 — Starter and feeding inserts omit required user_id
+
+- **Date found:** 2026-07-26
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Area:** Starter Workflow — Persistence
+- **Priority:** P0
+- **Status:** Fixed
+
+#### Description
+
+Creating starter profiles and feeding logs failed against production because insert payloads omitted the required `user_id` column (`NOT NULL` + RLS owner checks).
+
+#### Root cause
+
+- `StarterInsert` payload omitted `user_id`.
+- `FeedingLogInsert` payload omitted `user_id`.
+- Active-starter creation flow deactivated existing active records before new creation completed.
+
+#### Fix implemented
+
+1. Added authenticated `user_id` to starter insert payload.
+2. Added authenticated `user_id` to feeding-log insert payload.
+3. Changed active-starter creation flow to insert first, then deactivate other starters.
+4. Added repository error mapping for safe actionable messages and DEBUG-only technical logging.
+5. Added repository tests and scripted real Supabase integration checks for owner insert and cross-user rejection.
+
+#### Acceptance criteria
+
+- Starter and feeding inserts include authenticated user ownership fields.
+- Failed active starter creation does not deactivate previous active starter.
+- RLS allows owner inserts and rejects cross-user inserts.
+- User-facing errors are safe and actionable.
+
+### BUG-006 — Home screen is internal developer scaffold
+
+- **Date found:** 2026-07-26
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Area:** Home
+- **Priority:** P1
+- **Status:** Open
+
+#### Description
+
+Current Home screen is a developer scaffold and does not represent final product navigation/content expectations.
+
+#### Scope note
+
+This issue is tracked only in the bug log for now. No implementation changes are included in this fix.
 
 ## New Bug Template
 

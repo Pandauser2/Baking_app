@@ -28,7 +28,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .execute()
             return try decode([Starter].self, from: response.data)
         } catch {
-            throw AppError.unknown("Could not load starters.")
+            throw mapRepositoryError(error, operation: "load starters")
         }
     }
 
@@ -36,35 +36,44 @@ final class SupabaseStarterRepository: StarterRepository {
         let validatedName = try StarterValidation.validateStarterName(name)
         let validatedHydration = try StarterValidation.validateHydration(hydrationPreference)
         let userID = try await currentUserID()
-
-        if active {
-            try await deactivateAllStarters(for: userID)
-        }
-
         do {
-            let response = try await client
-                .from("starters")
-                .insert(StarterInsert(name: validatedName, hydrationPreference: validatedHydration, active: active))
-                .select()
-                .single()
-                .execute()
-            return try decode(Starter.self, from: response.data)
+            return try await Self.createStarterWithActivation(
+                active: active,
+                insert: { [self] in
+                    let response = try await client
+                        .from("starters")
+                        .insert(StarterInsert(
+                            userID: userID,
+                            name: validatedName,
+                            hydrationPreference: validatedHydration,
+                            active: active
+                        ))
+                        .select()
+                        .single()
+                        .execute()
+                    return try decode(Starter.self, from: response.data)
+                },
+                deactivateOthers: { [self] newStarterID in
+                    try await deactivateAllStarters(for: userID, excluding: newStarterID)
+                }
+            )
         } catch {
-            throw AppError.unknown("Could not create starter profile.")
+            throw mapRepositoryError(error, operation: "create starter")
         }
     }
 
     func setActiveStarter(starterID: UUID) async throws {
         let userID = try await currentUserID()
         do {
-            try await deactivateAllStarters(for: userID)
             _ = try await client
                 .from("starters")
                 .update(["active": true])
                 .eq("id", value: starterID.uuidString.lowercased())
+                .eq("user_id", value: userID.uuidString.lowercased())
                 .execute()
+            try await deactivateAllStarters(for: userID, excluding: starterID)
         } catch {
-            throw AppError.unknown("Could not update active starter.")
+            throw mapRepositoryError(error, operation: "set active starter")
         }
     }
 
@@ -78,7 +87,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .execute()
             return try decode(Starter.self, from: response.data)
         } catch {
-            throw AppError.unknown("Could not load starter details.")
+            throw mapRepositoryError(error, operation: "load starter details")
         }
     }
 
@@ -93,7 +102,7 @@ final class SupabaseStarterRepository: StarterRepository {
             let decoded = try decode([StarterState].self, from: response.data)
             return decoded.first
         } catch {
-            throw AppError.unknown("Could not load current starter state.")
+            throw mapRepositoryError(error, operation: "load starter state")
         }
     }
 
@@ -107,11 +116,13 @@ final class SupabaseStarterRepository: StarterRepository {
         notes: String?
     ) async throws -> FeedingLog {
         try StarterValidation.validateFeedingLog(roomTempC: roomTempC, flourG: flourG, waterG: waterG, starterG: starterG)
+        let userID = try await currentUserID()
         do {
             let response = try await client
                 .from("feeding_logs")
                 .insert(
                     FeedingLogInsert(
+                        userID: userID,
                         starterID: starterID,
                         loggedAt: loggedAt,
                         roomTempC: roomTempC,
@@ -126,7 +137,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .execute()
             return try decode(FeedingLog.self, from: response.data)
         } catch {
-            throw AppError.unknown("Could not save feeding log.")
+            throw mapRepositoryError(error, operation: "save feeding log")
         }
     }
 
@@ -140,7 +151,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .execute()
             return try decode([FeedingLog].self, from: response.data)
         } catch {
-            throw AppError.unknown("Could not load feeding history.")
+            throw mapRepositoryError(error, operation: "load feeding history")
         }
     }
 
@@ -156,7 +167,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 )
             return path
         } catch {
-            throw AppError.uploadFailed
+            throw mapRepositoryError(error, operation: "upload starter image")
         }
     }
 
@@ -178,12 +189,16 @@ final class SupabaseStarterRepository: StarterRepository {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AppError.analysisFailed
+            throw mapRepositoryError(AppError.analysisFailed, operation: "analyze starter image")
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            throw AppError.analysisFailed
+            throw mapRepositoryError(AppError.analysisFailed, operation: "analyze starter image")
         }
-        return try StarterAnalyzeResponseParser.decode(data)
+        do {
+            return try StarterAnalyzeResponseParser.decode(data)
+        } catch {
+            throw mapRepositoryError(error, operation: "decode starter analysis response")
+        }
     }
 
     func persistStarterAnalysis(
@@ -227,10 +242,10 @@ final class SupabaseStarterRepository: StarterRepository {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw AppError.unknown("Could not save analysis.")
+            throw mapRepositoryError(AppError.unknown("Invalid response"), operation: "save analysis")
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            throw AppError.unknown("Could not save analysis.")
+            throw mapRepositoryError(AppError.analysisFailed, operation: "save analysis")
         }
         do {
             return try decode(PersistedStarterAnalysisIDs.self, from: data)
@@ -238,7 +253,7 @@ final class SupabaseStarterRepository: StarterRepository {
             if let decodedArray = try? decode([PersistedStarterAnalysisIDs].self, from: data), let first = decodedArray.first {
                 return first
             }
-            throw AppError.unknown("Could not save analysis.")
+            throw mapRepositoryError(error, operation: "decode persisted analysis response")
         }
     }
 
@@ -261,7 +276,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 )
             }
         } catch {
-            throw AppError.unknown("Could not load starter timeline.")
+            throw mapRepositoryError(error, operation: "load starter timeline")
         }
     }
 
@@ -279,7 +294,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .execute()
             return try decode(Recommendation.self, from: response.data)
         } catch {
-            throw AppError.unknown("Could not update recommendation outcome.")
+            throw mapRepositoryError(error, operation: "update recommendation outcome")
         }
     }
 
@@ -297,15 +312,20 @@ final class SupabaseStarterRepository: StarterRepository {
     }
 
     private func currentUserID() async throws -> UUID {
-        let authSession = try await client.auth.session
-        return authSession.user.id
+        do {
+            let authSession = try await client.auth.session
+            return authSession.user.id
+        } catch {
+            throw mapRepositoryError(error, operation: "load authenticated user")
+        }
     }
 
-    private func deactivateAllStarters(for userID: UUID) async throws {
+    private func deactivateAllStarters(for userID: UUID, excluding starterID: UUID) async throws {
         _ = try await client
             .from("starters")
             .update(["active": false])
             .eq("user_id", value: userID.uuidString.lowercased())
+            .neq("id", value: starterID.uuidString.lowercased())
             .execute()
     }
 
@@ -314,21 +334,39 @@ final class SupabaseStarterRepository: StarterRepository {
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(T.self, from: data)
     }
+
+    private func mapRepositoryError(_ error: Error, operation: String) -> AppError {
+        RepositoryErrorMapper.map(error, operation: operation)
+    }
+
+    static func createStarterWithActivation(
+        active: Bool,
+        insert: () async throws -> Starter,
+        deactivateOthers: (UUID) async throws -> Void
+    ) async throws -> Starter {
+        let starter = try await insert()
+        guard active else { return starter }
+        try await deactivateOthers(starter.id)
+        return starter
+    }
 }
 
-private struct StarterInsert: Codable {
+struct StarterInsert: Codable {
+    let userID: UUID
     let name: String
     let hydrationPreference: Double?
     let active: Bool
 
     enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
         case name
         case hydrationPreference = "hydration_preference"
         case active
     }
 }
 
-private struct FeedingLogInsert: Codable {
+struct FeedingLogInsert: Codable {
+    let userID: UUID
     let starterID: UUID
     let loggedAt: Date
     let roomTempC: Double
@@ -338,6 +376,7 @@ private struct FeedingLogInsert: Codable {
     let notes: String?
 
     enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
         case starterID = "starter_id"
         case loggedAt = "logged_at"
         case roomTempC = "room_temp_c"
@@ -437,6 +476,48 @@ private struct RecommendationOutcomeUpdate: Encodable {
     enum CodingKeys: String, CodingKey {
         case outcome
         case completedAt = "completed_at"
+    }
+}
+
+enum RepositoryErrorMapper {
+    static func map(_ error: Error, operation: String) -> AppError {
+        debugLog(error, operation: operation)
+
+        if let appError = error as? AppError {
+            return appError
+        }
+        if let authError = error as? AuthError, authError == .sessionMissing {
+            return .unknown("Your session has expired. Please sign in again.")
+        }
+        if let postgrestError = error as? PostgrestError {
+            let code = postgrestError.code ?? ""
+            let message = postgrestError.message.lowercased()
+            if code == "42501" || message.contains("row-level security") || message.contains("permission denied") {
+                return .unknown("You don't have permission to perform this action.")
+            }
+            if code == "23502" || code == "23514" || code == "22P02" {
+                return .unknown("Some values are invalid. Please review the form and try again.")
+            }
+            return .unknown("Something went wrong while trying to \(operation). Please try again.")
+        }
+        if error is DecodingError {
+            return .unknown("We received an unexpected response from the server. Please try again.")
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost:
+                return .unknown("Network issue detected. Check your connection and try again.")
+            default:
+                return .unknown("Network request failed. Please try again.")
+            }
+        }
+        return .unknown("Something went wrong while trying to \(operation). Please try again.")
+    }
+
+    private static func debugLog(_ error: Error, operation: String) {
+        #if DEBUG
+        print("[StarterRepository] \(operation) failed: \(String(describing: error))")
+        #endif
     }
 }
 
