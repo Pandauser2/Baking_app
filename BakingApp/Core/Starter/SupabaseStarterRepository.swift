@@ -35,27 +35,15 @@ final class SupabaseStarterRepository: StarterRepository {
     func createStarter(name: String, hydrationPreference: Double?, active: Bool) async throws -> Starter {
         let validatedName = try StarterValidation.validateStarterName(name)
         let validatedHydration = try StarterValidation.validateHydration(hydrationPreference)
-        let userID = try await currentUserID()
         do {
-            return try await Self.createStarterWithActivation(
-                active: active,
-                insert: { [self] in
-                    let response = try await client
-                        .from("starters")
-                        .insert(StarterInsert(
-                            userID: userID,
-                            name: validatedName,
-                            hydrationPreference: validatedHydration,
-                            active: active
-                        ))
-                        .select()
-                        .single()
-                        .execute()
-                    return try decode(Starter.self, from: response.data)
-                },
-                deactivateOthers: { [self] newStarterID in
-                    try await deactivateAllStarters(for: userID, excluding: newStarterID)
-                }
+            let payload = CreateStarterProfilePayload(
+                name: validatedName,
+                hydrationPreference: validatedHydration,
+                active: active
+            )
+            return try await performStarterRPC(
+                name: "create_starter_profile",
+                payload: payload
             )
         } catch {
             throw mapRepositoryError(error, operation: "create starter")
@@ -63,15 +51,12 @@ final class SupabaseStarterRepository: StarterRepository {
     }
 
     func setActiveStarter(starterID: UUID) async throws {
-        let userID = try await currentUserID()
         do {
-            _ = try await client
-                .from("starters")
-                .update(["active": true])
-                .eq("id", value: starterID.uuidString.lowercased())
-                .eq("user_id", value: userID.uuidString.lowercased())
-                .execute()
-            try await deactivateAllStarters(for: userID, excluding: starterID)
+            let payload = SetActiveStarterPayload(starterID: starterID)
+            _ = try await performStarterRPC(
+                name: "set_active_starter",
+                payload: payload
+            )
         } catch {
             throw mapRepositoryError(error, operation: "set active starter")
         }
@@ -320,15 +305,6 @@ final class SupabaseStarterRepository: StarterRepository {
         }
     }
 
-    private func deactivateAllStarters(for userID: UUID, excluding starterID: UUID) async throws {
-        _ = try await client
-            .from("starters")
-            .update(["active": false])
-            .eq("user_id", value: userID.uuidString.lowercased())
-            .neq("id", value: starterID.uuidString.lowercased())
-            .execute()
-    }
-
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -339,26 +315,42 @@ final class SupabaseStarterRepository: StarterRepository {
         RepositoryErrorMapper.map(error, operation: operation)
     }
 
-    static func createStarterWithActivation(
-        active: Bool,
-        insert: () async throws -> Starter,
-        deactivateOthers: (UUID) async throws -> Void
+    private func performStarterRPC<Payload: Encodable>(
+        name: String,
+        payload: Payload
     ) async throws -> Starter {
-        let starter = try await insert()
-        guard active else { return starter }
-        try await deactivateOthers(starter.id)
-        return starter
+        let authSession = try await client.auth.session
+        let endpoint = supabaseURL
+            .appendingPathComponent("rest")
+            .appendingPathComponent("v1")
+            .appendingPathComponent("rpc")
+            .appendingPathComponent(name)
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(authSession.accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AppError.unknown("Invalid response")
+        }
+        guard 200..<300 ~= httpResponse.statusCode else {
+            throw AppError.unknown("Starter mutation failed")
+        }
+        return try StarterRPCResponseDecoder.decodeSingleStarter(data)
     }
 }
 
 struct StarterInsert: Codable {
-    let userID: UUID
     let name: String
     let hydrationPreference: Double?
     let active: Bool
 
     enum CodingKeys: String, CodingKey {
-        case userID = "user_id"
         case name
         case hydrationPreference = "hydration_preference"
         case active
@@ -476,6 +468,41 @@ private struct RecommendationOutcomeUpdate: Encodable {
     enum CodingKeys: String, CodingKey {
         case outcome
         case completedAt = "completed_at"
+    }
+}
+
+struct CreateStarterProfilePayload: Encodable {
+    let name: String
+    let hydrationPreference: Double?
+    let active: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case name = "p_name"
+        case hydrationPreference = "p_hydration_preference"
+        case active = "p_active"
+    }
+}
+
+struct SetActiveStarterPayload: Encodable {
+    let starterID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case starterID = "p_starter_id"
+    }
+}
+
+enum StarterRPCResponseDecoder {
+    static func decodeSingleStarter(_ data: Data) throws -> Starter {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let decoded = try? decoder.decode(Starter.self, from: data) {
+            return decoded
+        }
+        if let list = try? decoder.decode([Starter].self, from: data),
+           let first = list.first {
+            return first
+        }
+        throw AppError.malformedResponse
     }
 }
 

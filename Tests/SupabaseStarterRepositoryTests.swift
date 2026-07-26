@@ -21,19 +21,14 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertTrue(path.hasSuffix("/cccccccc-cccc-cccc-cccc-cccccccccccc.jpg"))
     }
 
-    func testStarterInsertEncodingIncludesAuthenticatedUserID() throws {
-        let payload = StarterInsert(
-            userID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
-            name: "Levain",
-            hydrationPreference: 100,
-            active: true
-        )
+    func testCreateStarterProfilePayloadHasNoUserIDField() throws {
+        let payload = CreateStarterProfilePayload(name: "Levain", hydrationPreference: 100, active: true)
         let encoded = try JSONEncoder().encode(payload)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
 
-        XCTAssertEqual((json["user_id"] as? String)?.lowercased(), "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-        XCTAssertEqual(json["name"] as? String, "Levain")
-        XCTAssertEqual(json["active"] as? Bool, true)
+        XCTAssertNil(json["user_id"])
+        XCTAssertEqual(json["p_name"] as? String, "Levain")
+        XCTAssertEqual(json["p_active"] as? Bool, true)
     }
 
     func testFeedingInsertEncodingIncludesAuthenticatedUserID() throws {
@@ -56,45 +51,51 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertEqual((json["starter_id"] as? String)?.lowercased(), "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     }
 
-    func testCreateStarterWithActivationDoesNotDeactivateWhenInsertFails() async {
-        var deactivateCalled = false
-        do {
-            _ = try await SupabaseStarterRepository.createStarterWithActivation(
-                active: true,
-                insert: {
-                    throw TestError.insertFailed
-                },
-                deactivateOthers: { _ in
-                    deactivateCalled = true
-                }
-            )
-            XCTFail("Expected insert failure")
-        } catch {
-            XCTAssertEqual(error as? TestError, .insertFailed)
-        }
-        XCTAssertFalse(deactivateCalled)
+    func testSetActiveStarterPayloadEncoding() throws {
+        let starterID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let payload = SetActiveStarterPayload(starterID: starterID)
+        let encoded = try JSONEncoder().encode(payload)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual((json["p_starter_id"] as? String)?.lowercased(), "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     }
 
-    func testCreateStarterWithActivationDeactivatesAfterSuccessfulInsert() async throws {
-        let createdStarter = Starter(
+    func testRPCStarterDecoderAcceptsArrayResponse() throws {
+        let starter = Starter(
             id: UUID(),
             userID: UUID(),
             name: "Levain",
             hydrationPreference: 100,
             createdAt: Date(),
-            active: true
+            active: false
         )
-        var deactivatedStarterID: UUID?
-        let result = try await SupabaseStarterRepository.createStarterWithActivation(
-            active: true,
-            insert: { createdStarter },
-            deactivateOthers: { id in
-                deactivatedStarterID = id
-            }
-        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode([starter])
+        let decoded = try StarterRPCResponseDecoder.decodeSingleStarter(data)
+        XCTAssertEqual(decoded.id, starter.id)
+    }
 
-        XCTAssertEqual(result.id, createdStarter.id)
-        XCTAssertEqual(deactivatedStarterID, createdStarter.id)
+    func testRPCStarterDecoderAcceptsObjectResponse() throws {
+        let starter = Starter(
+            id: UUID(),
+            userID: UUID(),
+            name: "Levain",
+            hydrationPreference: 100,
+            createdAt: Date(),
+            active: false
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(starter)
+        let decoded = try StarterRPCResponseDecoder.decodeSingleStarter(data)
+        XCTAssertEqual(decoded.id, starter.id)
+    }
+
+    func testRPCStarterDecoderRejectsInvalidShape() {
+        let invalid = Data("{\"ok\":true}".utf8)
+        XCTAssertThrowsError(try StarterRPCResponseDecoder.decodeSingleStarter(invalid)) { error in
+            XCTAssertEqual(error as? AppError, .malformedResponse)
+        }
     }
 
     func testErrorMappingSessionMissing() {
@@ -139,16 +140,12 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertEqual(mapped, .unknown("Something went wrong while trying to create starter. Please try again."))
     }
 
-    func testUserIDComesFromRepositoryPayloadNotUIInput() throws {
-        let payload = StarterInsert(
-            userID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
-            name: "Levain",
-            hydrationPreference: nil,
-            active: false
-        )
+    func testRPCCreatePayloadPreventsUserIDInjectionFromUI() throws {
+        let payload = CreateStarterProfilePayload(name: "Levain", hydrationPreference: nil, active: false)
         let encoded = try JSONEncoder().encode(payload)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        XCTAssertNotNil(json["user_id"])
+        XCTAssertNil(json["user_id"])
+        XCTAssertNil(json["p_user_id"])
     }
 }
 
