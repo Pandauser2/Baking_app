@@ -103,11 +103,16 @@ final class AppEnvironment: ObservableObject {
 }
 
 private struct NoopAuthClient: AuthClient {
+    var authCallbackURL: URL { URL(string: "bakingapp://auth-callback")! }
+
     func restoreSession() async throws -> UserSession? { nil }
-    func signUp(email: String, password: String) async throws -> UserSession {
+    func signUp(email: String, password: String) async throws -> SignUpOutcome {
         throw AppError.configuration("Configuration missing")
     }
     func signIn(email: String, password: String) async throws -> UserSession {
+        throw AppError.configuration("Configuration missing")
+    }
+    func handleAuthCallback(url: URL) async throws -> UserSession {
         throw AppError.configuration("Configuration missing")
     }
     func signOut() async throws {}

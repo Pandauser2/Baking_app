@@ -41,6 +41,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.pandauser2.BakingApp.auth
+            CFBundleURLSchemes:
+              - bakingapp
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
         REVENUECAT_PUBLIC_KEY: $(REVENUECAT_PUBLIC_KEY)

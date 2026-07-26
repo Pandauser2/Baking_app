@@ -3,6 +3,9 @@ import Supabase
 
 final class SupabaseAuthClient: AuthClient {
     private let client: SupabaseClient
+    static let callbackURL = URL(string: "bakingapp://auth-callback")!
+
+    var authCallbackURL: URL { Self.callbackURL }
 
     init(supabaseURL: URL, anonKey: String) {
         self.client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: anonKey)
@@ -17,10 +20,16 @@ final class SupabaseAuthClient: AuthClient {
         }
     }
 
-    func signUp(email: String, password: String) async throws -> UserSession {
-        let response = try await client.auth.signUp(email: email, password: password)
-        let user = response.user
-        return UserSession(userID: user.id, email: user.email)
+    func signUp(email: String, password: String) async throws -> SignUpOutcome {
+        let response = try await client.auth.signUp(
+            email: email,
+            password: password,
+            redirectTo: Self.callbackURL
+        )
+        if let session = response.session {
+            return .signedIn(UserSession(userID: session.user.id, email: session.user.email))
+        }
+        return .emailConfirmationRequired
     }
 
     func signIn(email: String, password: String) async throws -> UserSession {
@@ -30,6 +39,11 @@ final class SupabaseAuthClient: AuthClient {
 
     func signOut() async throws {
         try await client.auth.signOut()
+    }
+
+    func handleAuthCallback(url: URL) async throws -> UserSession {
+        let session = try await client.auth.session(from: url)
+        return UserSession(userID: session.user.id, email: session.user.email)
     }
 }
 

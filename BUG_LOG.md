@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-26 | 1.0 / 1 | Added and fixed BUG-004 email confirmation callback redirect. |
 | 2026-07-26 | 1.0 / 1 | Added BUG-003 navigation back/close visibility issue. |
 | 2026-07-26 | 1.0 / 1 | Added BUG-002 paywall offerings failure trap issue. |
 | 2026-07-25 | 1.0 / 1 | Initial bug log created. Added BUG-001. |
@@ -30,6 +31,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
 | BUG-003 | 2026-07-26 | Navigation | P1 | Open | Multiple app screens lack visible back navigation |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
 | BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Open | Weak signup password shows incorrect generic error |
@@ -193,6 +195,40 @@ Multiple non-root screens do not show a visible Back or Close control, making na
 - Native swipe navigation works.
 - Paywall handling remains tracked separately as `BUG-002`.
 - Tests and CI pass.
+
+### BUG-004 — Email confirmation redirects to unavailable localhost URL
+
+- **Date found:** 2026-07-26
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Area:** Authentication — Email Confirmation
+- **Priority:** P1
+- **Status:** Fixed
+
+#### Description
+
+Supabase confirmation email redirected to `http://localhost:3000/?code=...`, which is unavailable on device/simulator and prevented app callback handling.
+
+#### Root cause
+
+- Signup requests did not provide an app redirect URL.
+- The app did not register or handle an auth callback URL scheme at the root.
+
+#### Fix implemented
+
+1. Registered app URL scheme `bakingapp://auth-callback`.
+2. Passed exact redirect URL during signup through Supabase Auth SDK.
+3. Handled incoming callback URLs at app root and exchanged callback for session via SDK.
+4. Refreshed session state and routed into authenticated flow after successful callback.
+5. Added safe invalid/expired callback error messaging without exposing URL/code/token details.
+6. Added focused tests for redirect URL, callback validation, rejection behavior, and callback session refresh.
+
+#### Acceptance criteria
+
+- Confirmation emails redirect to app callback URL.
+- Successful callbacks sign the user in through normal app routing.
+- Invalid/expired callbacks show safe user-facing errors.
+- Sensitive callback/auth data is not logged.
 
 ## New Bug Template
 
