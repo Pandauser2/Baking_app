@@ -44,7 +44,13 @@ struct RootView: View {
                     onboardingStore.complete()
                 }
             case .home:
-                HomeView()
+                HomeView(
+                    viewModel: StarterWorkflowViewModel(
+                        repository: environment.starterRepository,
+                        analytics: environment.analytics,
+                        isProUser: environment.billingManager.hasProEntitlement
+                    )
+                )
             }
         }
         .alert("Authentication", isPresented: Binding(
