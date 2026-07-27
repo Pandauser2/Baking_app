@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-27 | 1.0 / 1 | Finalized BUG-005 verification evidence: nil hydration RPC serialization fix, regression coverage, and green CI. |
 | 2026-07-27 | 1.0 / 1 | Verified BUG-005 in simulator and remote Supabase (starter + feeding ownership, single active starter). |
 | 2026-07-26 | 1.0 / 1 | Added BUG-005 (fixed) for missing `user_id` in starter/feeding inserts and BUG-006 (open) for developer-scaffold Home screen. |
 | 2026-07-26 | 1.0 / 1 | Added and fixed BUG-004 email confirmation callback redirect. |
@@ -241,7 +242,7 @@ Supabase confirmation email redirected to `http://localhost:3000/?code=...`, whi
 - **Environment:** iPhone 17 Simulator, iOS 26.5
 - **Area:** Starter Workflow — Persistence
 - **Priority:** P0
-- **Status:** Fixed
+- **Status:** Verified
 
 #### Description
 
@@ -260,6 +261,12 @@ Creating starter profiles and feeding logs failed against production because ins
 3. Changed active-starter creation flow to insert first, then deactivate other starters.
 4. Added repository error mapping for safe actionable messages and DEBUG-only technical logging.
 5. Added repository tests and scripted real Supabase integration checks for owner insert and cross-user rejection.
+6. Fixed RPC payload serialization so `p_hydration_preference` is sent as explicit JSON `null` when hydration is empty (instead of omitting the key).
+7. Added focused regression tests for `CreateStarterProfilePayload` encoding:
+   - nil hydration includes `p_hydration_preference`
+   - nil hydration serializes as JSON null
+   - non-nil hydration serializes as numeric value
+   - `user_id` / `p_user_id` cannot be injected
 
 #### Acceptance criteria
 
@@ -273,6 +280,8 @@ Creating starter profiles and feeding logs failed against production because ins
 - **Environment:** iPhone 17 Simulator, iOS 26.5
 - **Manual app flow:** Signed in, created starter `BUG005 Verification` as active, opened starter details, created feeding log, and confirmed feeding history entry.
 - **Remote Supabase checks (linked project):** Starter row exists; starter row has owning user; feeding row exists for the same user/starter; exactly one active starter exists for that user.
+- **Regression coverage:** Focused payload-encoding tests pass for nil/non-nil hydration and anti-injection checks.
+- **CI:** GitHub Actions `iOS CI` passed for `Fix optional hydration RPC serialization` ([run 30297289335](https://github.com/Pandauser2/Baking_app/actions/runs/30297289335)).
 
 ### BUG-006 — Home screen is internal developer scaffold
 
