@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-27 | 1.0 / 1 | Verified BUG-005 in simulator and remote Supabase (starter + feeding ownership, single active starter). |
 | 2026-07-26 | 1.0 / 1 | Added BUG-005 (fixed) for missing `user_id` in starter/feeding inserts and BUG-006 (open) for developer-scaffold Home screen. |
 | 2026-07-26 | 1.0 / 1 | Added and fixed BUG-004 email confirmation callback redirect. |
 | 2026-07-26 | 1.0 / 1 | Added BUG-003 navigation back/close visibility issue. |
@@ -33,7 +34,7 @@ Central source of truth for product bugs and manual QA findings.
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
-| BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Fixed | Starter and feeding inserts omit required user_id |
+| BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Verified | Starter and feeding inserts omit required user_id |
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
 | BUG-003 | 2026-07-26 | Navigation | P1 | Open | Multiple app screens lack visible back navigation |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
@@ -206,7 +207,7 @@ Multiple non-root screens do not show a visible Back or Close control, making na
 - **Environment:** iPhone 17 Simulator, iOS 26.5
 - **Area:** Authentication — Email Confirmation
 - **Priority:** P1
-- **Status:** Fixed
+- **Status:** Verified
 
 #### Description
 
@@ -266,6 +267,12 @@ Creating starter profiles and feeding logs failed against production because ins
 - Failed active starter creation does not deactivate previous active starter.
 - RLS allows owner inserts and rejects cross-user inserts.
 - User-facing errors are safe and actionable.
+
+#### Verification evidence (2026-07-27)
+
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Manual app flow:** Signed in, created starter `BUG005 Verification` as active, opened starter details, created feeding log, and confirmed feeding history entry.
+- **Remote Supabase checks (linked project):** Starter row exists; starter row has owning user; feeding row exists for the same user/starter; exactly one active starter exists for that user.
 
 ### BUG-006 — Home screen is internal developer scaffold
 
