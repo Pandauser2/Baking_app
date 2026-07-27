@@ -78,13 +78,11 @@ struct HomeView: View {
                 PaywallView()
             }
             .navigationDestination(isPresented: $showStarterList) {
-                StarterListView(
-                    viewModel: StarterWorkflowViewModel(
-                        repository: environment.starterRepository,
-                        analytics: environment.analytics,
-                        isProUser: billingManager.hasProEntitlement
-                    )
-                )
+                StarterListView(viewModel: viewModel)
+            }
+            .onChange(of: showStarterList) { isPresented in
+                guard !isPresented else { return }
+                Task { await viewModel.refreshHomeContext() }
             }
             .sheet(isPresented: $showCreateStarter) {
                 NavigationStack {
@@ -109,7 +107,7 @@ struct HomeView: View {
             .task {
                 guard !hasLoadedHomeData else { return }
                 hasLoadedHomeData = true
-                await loadHomeData()
+                await viewModel.refreshHomeContext()
             }
         }
     }
@@ -239,7 +237,7 @@ struct HomeView: View {
                 Text("We could not refresh this screen. Please try again.")
                     .foregroundStyle(AppTheme.Colors.secondaryText)
                 Button("Retry") {
-                    Task { await loadHomeData() }
+                    Task { await viewModel.refreshHomeContext() }
                 }
                 .buttonStyle(.bordered)
                 .tint(AppTheme.Colors.accent)
@@ -269,13 +267,6 @@ struct HomeView: View {
         }
     }
 
-    private func loadHomeData() async {
-        await viewModel.loadStarters()
-        guard let activeStarter = viewModel.activeStarter else { return }
-        await viewModel.loadStarterState(starterID: activeStarter.id)
-        await viewModel.loadFeedingHistory(starterID: activeStarter.id)
-        await viewModel.loadTimeline(starterID: activeStarter.id)
-    }
 }
 
 enum HomeContentState: Equatable {

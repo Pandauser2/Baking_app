@@ -4,11 +4,11 @@ struct StarterListView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var billingManager: BillingManager
 
-    @StateObject private var viewModel: StarterWorkflowViewModel
+    @ObservedObject var viewModel: StarterWorkflowViewModel
     @State private var showCreate = false
 
     init(viewModel: StarterWorkflowViewModel) {
-        _viewModel = StateObject(wrappedValue: viewModel)
+        self.viewModel = viewModel
     }
 
     var body: some View {

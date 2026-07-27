@@ -130,6 +130,56 @@ final class StarterWorkflowViewModel: ObservableObject {
         }
     }
 
+    func refreshHomeContext() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        let previousActiveStarterID = activeStarter?.id
+        let previousStarters = starters
+
+        do {
+            starters = try await repository.listStarters()
+        } catch {
+            starters = previousStarters
+            errorMessage = userMessage(error)
+            return
+        }
+
+        guard let latestActiveStarter = activeStarter else {
+            starterState = nil
+            feedingLogs = []
+            timeline = []
+            recommendation = nil
+            return
+        }
+
+        if previousActiveStarterID != latestActiveStarter.id {
+            starterState = nil
+            feedingLogs = []
+            timeline = []
+            recommendation = nil
+        }
+
+        do {
+            starterState = try await repository.fetchStarterState(starterID: latestActiveStarter.id)
+        } catch {
+            errorMessage = userMessage(error)
+        }
+
+        do {
+            feedingLogs = try await repository.listFeedingLogs(starterID: latestActiveStarter.id)
+        } catch {
+            errorMessage = userMessage(error)
+        }
+
+        do {
+            timeline = try await repository.listTimeline(starterID: latestActiveStarter.id)
+            recommendation = timeline.first?.recommendation
+        } catch {
+            errorMessage = userMessage(error)
+        }
+    }
+
     func handleSelectedPhoto() async {
         guard let selectedItem else { return }
         do {
