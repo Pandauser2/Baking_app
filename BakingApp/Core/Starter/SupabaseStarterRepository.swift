@@ -481,6 +481,17 @@ struct CreateStarterProfilePayload: Encodable {
         case hydrationPreference = "p_hydration_preference"
         case active = "p_active"
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        if let hydrationPreference {
+            try container.encode(hydrationPreference, forKey: .hydrationPreference)
+        } else {
+            try container.encodeNil(forKey: .hydrationPreference)
+        }
+        try container.encode(active, forKey: .active)
+    }
 }
 
 struct SetActiveStarterPayload: Encodable {

@@ -27,6 +27,19 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
 
         XCTAssertNil(json["user_id"])
+        XCTAssertNil(json["p_user_id"])
+        XCTAssertEqual(json["p_name"] as? String, "Levain")
+        XCTAssertEqual(json["p_hydration_preference"] as? Double, 100)
+        XCTAssertEqual(json["p_active"] as? Bool, true)
+    }
+
+    func testCreateStarterProfilePayloadEncodesNullHydrationWhenMissing() throws {
+        let payload = CreateStarterProfilePayload(name: "Levain", hydrationPreference: nil, active: true)
+        let encoded = try JSONEncoder().encode(payload)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertTrue(json.keys.contains("p_hydration_preference"))
+        XCTAssertTrue(json["p_hydration_preference"] is NSNull)
         XCTAssertEqual(json["p_name"] as? String, "Levain")
         XCTAssertEqual(json["p_active"] as? Bool, true)
     }
