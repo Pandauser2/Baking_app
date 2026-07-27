@@ -1,7 +1,11 @@
-#include? "Config.local.xcconfig"
-
+SLASH = /
+SUPABASE_HOST = $(inherited)
 SUPABASE_URL = $(inherited)
 SUPABASE_ANON_KEY = $(inherited)
 REVENUECAT_PUBLIC_KEY = $(inherited)
 REVENUECAT_ENTITLEMENT_ID = pro
+
+#include? "Config.local.xcconfig"
+
+SUPABASE_URL = https:$(SLASH)$(SLASH)$(SUPABASE_HOST)
 

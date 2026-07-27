@@ -45,6 +45,8 @@ targets:
           - CFBundleURLName: com.pandauser2.BakingApp.auth
             CFBundleURLSchemes:
               - bakingapp
+        NSCameraUsageDescription: Capture starter and loaf photos for AI analysis.
+        NSPhotoLibraryUsageDescription: Select starter and loaf photos for AI analysis.
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
         REVENUECAT_PUBLIC_KEY: $(REVENUECAT_PUBLIC_KEY)

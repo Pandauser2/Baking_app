@@ -14,7 +14,13 @@ struct AppConfig {
 
     static func load(bundle: Bundle = .main) throws -> AppConfig {
         let urlString = try requiredValue("SUPABASE_URL", bundle: bundle)
-        guard let supabaseURL = URL(string: urlString) else {
+        guard
+            let supabaseURL = URL(string: urlString),
+            let scheme = supabaseURL.scheme?.lowercased(),
+            (scheme == "https" || scheme == "http"),
+            let host = supabaseURL.host,
+            !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             throw AppConfigError.invalidURL("SUPABASE_URL is not a valid URL")
         }
 

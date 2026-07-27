@@ -18,8 +18,23 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.pandauser2.BakingApp.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bakingapp</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture starter and loaf photos for AI analysis.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select starter and loaf photos for AI analysis.</string>
 	<key>REVENUECAT_ENTITLEMENT_ID</key>
 	<string>$(REVENUECAT_ENTITLEMENT_ID)</string>
 	<key>REVENUECAT_PUBLIC_KEY</key>
@@ -28,10 +43,6 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>
 	<string>$(SUPABASE_URL)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Capture loaf photos for AI analysis.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Select loaf photos for AI analysis.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
