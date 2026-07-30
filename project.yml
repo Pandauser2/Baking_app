@@ -94,4 +94,18 @@ schemes:
       config: Debug
       targets:
         - BakingAppTests
+  BakingApp-QA:
+    build:
+      targets:
+        BakingApp: all
+        BakingAppTests: [test]
+    run:
+      config: Debug
+      storeKitConfiguration: BakingApp/Resources/BakingApp.storekit
+      commandLineArguments:
+        "-qaProEntitlement": true
+    test:
+      config: Debug
+      targets:
+        - BakingAppTests
 

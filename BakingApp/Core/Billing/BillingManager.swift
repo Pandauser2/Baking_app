@@ -8,9 +8,22 @@ final class BillingManager: ObservableObject {
     @Published var bannerMessage: String?
 
     private let client: BillingClient
+    private let qaProEntitlementOverrideEnabled: Bool
 
-    init(client: BillingClient) {
+    init(client: BillingClient, launchArguments: [String]? = nil) {
         self.client = client
+        let arguments = launchArguments ?? ProcessInfo.processInfo.arguments
+        #if DEBUG
+        self.qaProEntitlementOverrideEnabled = arguments.contains("-qaProEntitlement")
+        #else
+        self.qaProEntitlementOverrideEnabled = false
+        #endif
+        if qaProEntitlementOverrideEnabled {
+            hasProEntitlement = true
+            #if DEBUG
+            print("QA Pro entitlement override enabled")
+            #endif
+        }
     }
 
     func configure(apiKey: String) {
@@ -35,7 +48,7 @@ final class BillingManager: ObservableObject {
         state = .loading
         do {
             let info = try await client.purchase(productID: productID)
-            hasProEntitlement = info.hasEntitlement
+            applyEntitlement(info.hasEntitlement)
             state = .purchaseSuccess
             bannerMessage = nil
         } catch let appError as AppError {
@@ -54,7 +67,7 @@ final class BillingManager: ObservableObject {
     func restorePurchases() async {
         do {
             let info = try await client.restorePurchases()
-            hasProEntitlement = info.hasEntitlement
+            applyEntitlement(info.hasEntitlement)
             bannerMessage = "Purchases restored."
         } catch let appError as AppError {
             bannerMessage = appError.errorDescription
@@ -65,10 +78,14 @@ final class BillingManager: ObservableObject {
 
     func refreshEntitlement() async {
         do {
-            hasProEntitlement = try await client.refreshCustomerInfo().hasEntitlement
+            applyEntitlement(try await client.refreshCustomerInfo().hasEntitlement)
         } catch {
-            hasProEntitlement = false
+            applyEntitlement(false)
         }
+    }
+
+    private func applyEntitlement(_ revenueCatValue: Bool) {
+        hasProEntitlement = qaProEntitlementOverrideEnabled || revenueCatValue
     }
 }
 

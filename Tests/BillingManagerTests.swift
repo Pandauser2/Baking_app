@@ -3,6 +3,54 @@ import XCTest
 
 @MainActor
 final class BillingManagerTests: XCTestCase {
+    func testNoLaunchArgumentEntitlementRemainsRevenueCatControlled() async {
+        let client = FakeBillingClient(refreshInfo: BillingCustomerInfo(hasEntitlement: false))
+        let manager = BillingManager(client: client, launchArguments: [])
+
+        await manager.refreshEntitlement()
+        XCTAssertFalse(manager.hasProEntitlement)
+
+        client.refreshInfo = BillingCustomerInfo(hasEntitlement: true)
+        await manager.refreshEntitlement()
+        XCTAssertTrue(manager.hasProEntitlement)
+    }
+
+    func testExactLaunchArgumentEnablesQAEntitlementOverrideInDebug() async {
+        let client = FakeBillingClient(refreshInfo: BillingCustomerInfo(hasEntitlement: false))
+        let manager = BillingManager(client: client, launchArguments: ["-qaProEntitlement"])
+
+        XCTAssertTrue(manager.hasProEntitlement)
+        await manager.refreshEntitlement()
+        XCTAssertTrue(manager.hasProEntitlement)
+    }
+
+    func testUnrelatedLaunchArgumentsDoNotEnableOverride() async {
+        let client = FakeBillingClient(refreshInfo: BillingCustomerInfo(hasEntitlement: false))
+        let manager = BillingManager(client: client, launchArguments: ["-qaProEntitlements", "-qa", "-otherFlag"])
+
+        await manager.refreshEntitlement()
+        XCTAssertFalse(manager.hasProEntitlement)
+    }
+
+    func testRefreshFailureCannotDisableActiveQAOverride() async {
+        let client = FakeBillingClient(
+            refreshInfo: BillingCustomerInfo(hasEntitlement: true),
+            refreshError: AppError.unknown("refresh failed")
+        )
+        let manager = BillingManager(client: client, launchArguments: ["-qaProEntitlement"])
+
+        XCTAssertTrue(manager.hasProEntitlement)
+        await manager.refreshEntitlement()
+        XCTAssertTrue(manager.hasProEntitlement)
+    }
+
+    func testProductionPathDoesNotDefaultToProWithoutOverride() async {
+        let client = FakeBillingClient(refreshInfo: BillingCustomerInfo(hasEntitlement: false))
+        let manager = BillingManager(client: client, launchArguments: [""])
+
+        XCTAssertFalse(manager.hasProEntitlement)
+    }
+
     func testEntitlementRefreshMapsToProState() async {
         let client = FakeBillingClient(refreshInfo: BillingCustomerInfo(hasEntitlement: true))
         let manager = BillingManager(client: client)
@@ -45,7 +93,7 @@ final class BillingManagerTests: XCTestCase {
     }
 }
 
-private struct FakeBillingClient: BillingClient {
+private final class FakeBillingClient: BillingClient {
     var offerings: [SubscriptionOffer] = []
     var purchaseInfo: BillingCustomerInfo = BillingCustomerInfo(hasEntitlement: false)
     var restoreInfo: BillingCustomerInfo = BillingCustomerInfo(hasEntitlement: false)
@@ -54,6 +102,26 @@ private struct FakeBillingClient: BillingClient {
     var purchaseError: Error?
     var restoreError: Error?
     var refreshError: Error?
+
+    init(
+        offerings: [SubscriptionOffer] = [],
+        purchaseInfo: BillingCustomerInfo = BillingCustomerInfo(hasEntitlement: false),
+        restoreInfo: BillingCustomerInfo = BillingCustomerInfo(hasEntitlement: false),
+        refreshInfo: BillingCustomerInfo = BillingCustomerInfo(hasEntitlement: false),
+        offeringsError: Error? = nil,
+        purchaseError: Error? = nil,
+        restoreError: Error? = nil,
+        refreshError: Error? = nil
+    ) {
+        self.offerings = offerings
+        self.purchaseInfo = purchaseInfo
+        self.restoreInfo = restoreInfo
+        self.refreshInfo = refreshInfo
+        self.offeringsError = offeringsError
+        self.purchaseError = purchaseError
+        self.restoreError = restoreError
+        self.refreshError = refreshError
+    }
 
     func configure(apiKey: String) {}
 
