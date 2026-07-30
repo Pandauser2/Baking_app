@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-30 | 1.0 / 1 | Added BUG-008 and implemented safe structured starter-analysis diagnostics with fixed error mapping (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added and fixed BUG-007 stale starter-list active-state consistency issue after active starter creation (Fixed, not Verified). |
 | 2026-07-27 | 1.0 / 1 | Finalized BUG-005 verification evidence: nil hydration RPC serialization fix, regression coverage, and green CI. |
 | 2026-07-27 | 1.0 / 1 | Verified BUG-005 in simulator and remote Supabase (starter + feeding ownership, single active starter). |
@@ -35,6 +36,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
 | BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Verified | Starter and feeding inserts omit required user_id |
@@ -335,6 +337,56 @@ Immediately after creating a new starter as active, the local list briefly showe
 - Refresh failures do not convert successful creation into a user-visible creation failure.
 - No duplicate starter rows appear in local list state.
 - Focused tests and CI pass.
+
+### BUG-008 — Starter analysis fails in QA build
+
+- **Date found:** 2026-07-30
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5, `BakingApp-QA`
+- **Area:** Starter Workflow — Analysis
+- **Priority:** P0
+- **Status:** Fixed
+
+#### Description
+
+Starter scan upload succeeds, but analysis can fail with a generic error message: "Analysis failed. Please try again." The client discarded non-2xx function response bodies, which hid actionable failure details.
+
+#### Root cause
+
+- The `analyze-starter` Edge Function returned unstructured errors (`error`) and collapsed provider failures into generic values (for example, `provider_400`).
+- The iOS repository did not decode non-2xx error bodies from `analyze-starter` and always surfaced generic analysis failure text.
+- This masked the exact failing layer (provider auth/quota/rate-limit/timeout/schema/image issues) during QA.
+
+#### Fix implemented
+
+1. Added structured safe error responses in `analyze-starter` with:
+   - `error_code`
+   - safe `message`
+   - `request_id` correlation ID
+2. Added explicit error-code mapping for:
+   - `AUTH_INVALID`
+   - `STARTER_NOT_FOUND`
+   - `IMAGE_DOWNLOAD_FAILED`
+   - `IMAGE_INVALID`
+   - `PROVIDER_AUTH`
+   - `PROVIDER_QUOTA`
+   - `PROVIDER_RATE_LIMIT`
+   - `PROVIDER_TIMEOUT`
+   - `PROVIDER_RESPONSE_INVALID`
+   - `INTERNAL_ERROR`
+3. Updated iOS analysis networking to decode non-2xx function bodies and map structured error codes to safe actionable user messages.
+4. Added DEBUG-only safe diagnostics logging for analysis failures:
+   - `request_id`
+   - HTTP status
+   - `error_code`
+5. Added focused tests for structured error mapping and provider/schema timeout behavior.
+
+#### Acceptance criteria
+
+- Non-2xx `analyze-starter` responses include structured safe fields and request correlation.
+- iOS no longer discards safe non-2xx payloads and shows actionable errors.
+- DEBUG diagnostics include only correlation ID, status, and error code.
+- No auth/RLS/storage ownership weakening introduced.
 
 ## New Bug Template
 

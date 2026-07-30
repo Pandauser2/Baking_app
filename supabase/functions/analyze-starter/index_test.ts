@@ -10,10 +10,10 @@ import {
   ensureStarterOwnedByUser,
   loadHistoryContext,
   parseAnalyzeStarterRequest,
+  validateStoragePathOwnership,
   validateAuthorizationHeader,
   validateImage,
   validateStarterAiResponse,
-  validateStoragePathOwnership,
 } from "./index.ts";
 
 const validUUID = "123e4567-e89b-12d3-a456-426614174000";
@@ -193,6 +193,40 @@ Deno.test("JSON repair attempt runs once after malformed json", async () => {
   assertEquals(calls, 2);
 });
 
+Deno.test("invalid provider schema maps to provider response invalid error", async () => {
+  let calls = 0;
+  const mockFetch: typeof fetch = async () => {
+    calls += 1;
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ scan_type: "starter" }) } }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  await assertRejects(
+    () =>
+      callOpenAIWithRetry(
+        "key",
+        "model",
+        buildPngBytes(512, 512),
+        {
+          feeding_logs: [],
+          recent_scans: [],
+          recent_analyses: [],
+          starter_state: null,
+          unresolved_recommendations: [],
+          recent_outcomes: [],
+        },
+        mockFetch,
+      ),
+    Error,
+    "invalid structured output",
+  );
+  assertEquals(calls, 2);
+});
+
 Deno.test("history context selection returns expected slices", async () => {
   const context = await loadHistoryContext(validUUID, {
     fetchFeedingLogs: async () => [{ id: 1 }, { id: 2 }, { id: 3 }],
@@ -250,6 +284,7 @@ Deno.test("non-retryable provider error fails immediately", async () => {
         mockFetch,
       ),
     Error,
+    "invalid response",
   );
   assertEquals(calls, 1);
 });

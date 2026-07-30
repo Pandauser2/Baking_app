@@ -160,6 +160,100 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertNil(json["user_id"])
         XCTAssertNil(json["p_user_id"])
     }
+
+    func testAnalyzeErrorMappingAuthInvalid() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 401,
+            data: makeAnalyzeErrorBody(code: "AUTH_INVALID", message: "Authentication is invalid.")
+        )
+        XCTAssertEqual(error, .unknown("Your session is invalid. Please sign in again and retry analysis."))
+    }
+
+    func testAnalyzeErrorMappingStarterNotFound() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 404,
+            data: makeAnalyzeErrorBody(code: "STARTER_NOT_FOUND", message: "Starter not found.")
+        )
+        XCTAssertEqual(error, .unknown("Starter not found. Refresh your starters and try again."))
+    }
+
+    func testAnalyzeErrorMappingImageDownloadFailed() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 400,
+            data: makeAnalyzeErrorBody(code: "IMAGE_DOWNLOAD_FAILED", message: "Could not download image.")
+        )
+        XCTAssertEqual(error, .unknown("We couldn't read the uploaded image. Please choose another photo and retry."))
+    }
+
+    func testAnalyzeErrorMappingImageInvalid() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 400,
+            data: makeAnalyzeErrorBody(code: "IMAGE_INVALID", message: "Image failed validation.")
+        )
+        XCTAssertEqual(error, .unknown("The uploaded image was rejected. Retake the photo and try again."))
+    }
+
+    func testAnalyzeErrorMappingProviderAuth() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 502,
+            data: makeAnalyzeErrorBody(code: "PROVIDER_AUTH", message: "Provider auth failed.")
+        )
+        XCTAssertEqual(error, .unknown("Analysis provider authentication failed. Please try again shortly."))
+    }
+
+    func testAnalyzeErrorMappingProviderQuota() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 503,
+            data: makeAnalyzeErrorBody(code: "PROVIDER_QUOTA", message: "Quota exceeded.")
+        )
+        XCTAssertEqual(error, .unknown("Analysis is temporarily unavailable due to provider quota limits. Please try again later."))
+    }
+
+    func testAnalyzeErrorMappingProviderRateLimit() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 429,
+            data: makeAnalyzeErrorBody(code: "PROVIDER_RATE_LIMIT", message: "Rate limited.")
+        )
+        XCTAssertEqual(error, .unknown("Analysis is temporarily rate-limited. Please wait a moment and retry."))
+    }
+
+    func testAnalyzeErrorMappingProviderTimeout() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 504,
+            data: makeAnalyzeErrorBody(code: "PROVIDER_TIMEOUT", message: "Timed out.")
+        )
+        XCTAssertEqual(error, .unknown("Analysis timed out. Please retry."))
+    }
+
+    func testAnalyzeErrorMappingProviderResponseInvalid() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 502,
+            data: makeAnalyzeErrorBody(code: "PROVIDER_RESPONSE_INVALID", message: "Invalid provider response.")
+        )
+        XCTAssertEqual(error, .unknown("The analysis provider returned an invalid response. Please retry with another photo."))
+    }
+
+    func testAnalyzeErrorMappingInternalErrorUsesSafeMessage() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(
+            statusCode: 500,
+            data: makeAnalyzeErrorBody(code: "INTERNAL_ERROR", message: "Analysis failed due to an unexpected internal error.")
+        )
+        XCTAssertEqual(error, .unknown("Analysis failed due to an unexpected internal error."))
+    }
+
+    func testAnalyzeErrorMappingInvalidBodyFallsBackToGenericAnalysisFailure() {
+        let error = StarterAnalyzeHTTPErrorMapper.map(statusCode: 500, data: Data("{}".utf8))
+        XCTAssertEqual(error, .analysisFailed)
+    }
+
+    private func makeAnalyzeErrorBody(code: String, message: String) -> Data {
+        let payload: [String: Any] = [
+            "error_code": code,
+            "message": message,
+            "request_id": UUID().uuidString.lowercased()
+        ]
+        return (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+    }
 }
 
 private enum TestError: Error, Equatable {

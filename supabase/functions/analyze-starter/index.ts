@@ -25,6 +25,24 @@ export type StarterAIResponse = {
   starter_state: string;
 };
 
+export type AnalyzeStarterErrorCode =
+  | "AUTH_INVALID"
+  | "STARTER_NOT_FOUND"
+  | "IMAGE_DOWNLOAD_FAILED"
+  | "IMAGE_INVALID"
+  | "PROVIDER_AUTH"
+  | "PROVIDER_QUOTA"
+  | "PROVIDER_RATE_LIMIT"
+  | "PROVIDER_TIMEOUT"
+  | "PROVIDER_RESPONSE_INVALID"
+  | "INTERNAL_ERROR";
+
+export type AnalyzeStarterErrorResponse = {
+  error_code: AnalyzeStarterErrorCode;
+  message: string;
+  request_id: string;
+};
+
 type OpenAIMessage = {
   role: "system" | "user";
   content: string | Array<Record<string, unknown>>;
@@ -55,6 +73,35 @@ function jsonResponse(status: number, body: unknown): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function errorResponse(
+  status: number,
+  errorCode: AnalyzeStarterErrorCode,
+  message: string,
+  requestID: string,
+): Response {
+  console.error(JSON.stringify({
+    request_id: requestID,
+    status,
+    error_code: errorCode,
+  }));
+  return jsonResponse(status, {
+    error_code: errorCode,
+    message,
+    request_id: requestID,
+  } satisfies AnalyzeStarterErrorResponse);
+}
+
+class AnalyzeStarterError extends Error {
+  code: AnalyzeStarterErrorCode;
+  status: number;
+
+  constructor(code: AnalyzeStarterErrorCode, status: number, message: string) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -108,6 +155,59 @@ export function parseAnalyzeStarterRequest(input: unknown): AnalyzeStarterReques
 
 export function validateStoragePathOwnership(userId: string, starterId: string, path: string): boolean {
   return path.startsWith(`${userId}/${starterId}/`);
+}
+
+type ProviderErrorDetails = {
+  code?: string;
+  message?: string;
+};
+
+function extractProviderError(payload: unknown): ProviderErrorDetails {
+  if (!payload || typeof payload !== "object") return {};
+  const errorObject = (payload as { error?: unknown }).error;
+  if (!errorObject || typeof errorObject !== "object") return {};
+  const record = errorObject as Record<string, unknown>;
+  return {
+    code: typeof record.code === "string" ? record.code : undefined,
+    message: typeof record.message === "string" ? record.message : undefined,
+  };
+}
+
+function classifyProviderError(status: number, details: ProviderErrorDetails): AnalyzeStarterError {
+  if (status === 401 || status === 403) {
+    return new AnalyzeStarterError(
+      "PROVIDER_AUTH",
+      400,
+      "The analysis provider rejected authentication.",
+    );
+  }
+  if (status === 429) {
+    const errorCode = (details.code ?? "").toLowerCase();
+    if (errorCode.includes("quota") || errorCode.includes("insufficient_quota")) {
+      return new AnalyzeStarterError(
+        "PROVIDER_QUOTA",
+        429,
+        "Analysis provider quota is currently exhausted.",
+      );
+    }
+    return new AnalyzeStarterError(
+      "PROVIDER_RATE_LIMIT",
+      429,
+      "Analysis provider rate limit reached. Please retry shortly.",
+    );
+  }
+  if (status >= 500) {
+    return new AnalyzeStarterError(
+      "PROVIDER_TIMEOUT",
+      408,
+      "The analysis provider timed out.",
+    );
+  }
+  return new AnalyzeStarterError(
+    "PROVIDER_RESPONSE_INVALID",
+    400,
+    "The analysis provider returned an invalid response.",
+  );
 }
 
 export function parseImageDimensions(imageBytes: Uint8Array): { width: number; height: number; mime: string } {
@@ -374,22 +474,39 @@ export async function callOpenAIWithRetry(
     } catch (error) {
       const message = error instanceof Error ? error.message.toLowerCase() : "";
       if (message.includes("abort") || message.includes("timeout")) {
-        throw new Error("provider_timeout");
+        throw new AnalyzeStarterError(
+          "PROVIDER_TIMEOUT",
+          408,
+          "The analysis provider timed out.",
+        );
       }
-      throw error;
+      throw new AnalyzeStarterError(
+        "INTERNAL_ERROR",
+        500,
+        "Failed to contact the analysis provider.",
+      );
     } finally {
       clearTimeout(timeoutId);
     }
 
     if (!response.ok) {
-      if (response.status >= 500 && response.status <= 599) {
-        throw new Error("provider_5xx");
+      let providerPayload: unknown = null;
+      try {
+        providerPayload = await response.json();
+      } catch {
+        // ignored, this is safe fallback classification.
       }
-      throw new Error(`provider_${response.status}`);
+      throw classifyProviderError(response.status, extractProviderError(providerPayload));
     }
     const payload = await response.json();
     const content = payload?.choices?.[0]?.message?.content;
-    if (typeof content !== "string") throw new Error("empty_provider_content");
+    if (typeof content !== "string") {
+      throw new AnalyzeStarterError(
+        "PROVIDER_RESPONSE_INVALID",
+        400,
+        "The analysis provider returned an empty payload.",
+      );
+    }
     return content;
   }
 
@@ -399,8 +516,11 @@ export async function callOpenAIWithRetry(
       rawContent = await requestOpenAI();
       break;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (attempt === 0 && (message === "provider_5xx" || message === "provider_timeout")) {
+      if (
+        attempt === 0 &&
+        error instanceof AnalyzeStarterError &&
+        (error.code === "PROVIDER_TIMEOUT" || error.code === "PROVIDER_RATE_LIMIT")
+      ) {
         continue;
       }
       throw error;
@@ -410,14 +530,23 @@ export async function callOpenAIWithRetry(
   try {
     return validateStarterAiResponse(JSON.parse(rawContent));
   } catch {
-    const repaired = await requestOpenAI(
-      "Your previous response was invalid JSON for the required schema. Return corrected JSON only.",
-    );
-    return validateStarterAiResponse(JSON.parse(repaired));
+    try {
+      const repaired = await requestOpenAI(
+        "Your previous response was invalid JSON for the required schema. Return corrected JSON only.",
+      );
+      return validateStarterAiResponse(JSON.parse(repaired));
+    } catch {
+      throw new AnalyzeStarterError(
+        "PROVIDER_RESPONSE_INVALID",
+        400,
+        "The analysis provider returned invalid structured output.",
+      );
+    }
   }
 }
 
 const handler = async (req: Request) => {
+  const requestID = crypto.randomUUID();
   if (req.method === "OPTIONS") return new Response("ok");
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
@@ -429,25 +558,35 @@ const handler = async (req: Request) => {
     const authHeader = req.headers.get("Authorization");
 
     if (!supabaseUrl || !serviceRoleKey || !openAIKey) {
-      return jsonResponse(500, { error: "Function is not configured" });
+      return errorResponse(
+        500,
+        "INTERNAL_ERROR",
+        "The analysis service is not configured.",
+        requestID,
+      );
     }
     try {
       validateAuthorizationHeader(authHeader);
     } catch {
-      return jsonResponse(401, { error: "Missing bearer token" });
+      return errorResponse(401, "AUTH_INVALID", "Authentication is required.", requestID);
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const jwt = validateAuthorizationHeader(authHeader);
     const { data: authData, error: authError } = await supabase.auth.getUser(jwt);
     if (authError || !authData.user) {
-      return jsonResponse(401, { error: "Invalid auth token" });
+      return errorResponse(401, "AUTH_INVALID", "Authentication is invalid.", requestID);
     }
     const userId = authData.user.id;
 
-    const body = parseAnalyzeStarterRequest(await req.json());
+    let body: AnalyzeStarterRequest;
+    try {
+      body = parseAnalyzeStarterRequest(await req.json());
+    } catch {
+      return errorResponse(400, "INTERNAL_ERROR", "Request body is invalid.", requestID);
+    }
     if (!validateStoragePathOwnership(userId, body.starter_id, body.image_path)) {
-      return jsonResponse(403, { error: "Image path is outside user starter prefix" });
+      return errorResponse(403, "AUTH_INVALID", "Image path ownership check failed.", requestID);
     }
 
     const { data: starter, error: starterError } = await supabase
@@ -457,7 +596,7 @@ const handler = async (req: Request) => {
       .eq("user_id", userId)
       .single();
     if (starterError || !starter) {
-      return jsonResponse(404, { error: "Starter not found for user" });
+      return errorResponse(404, "STARTER_NOT_FOUND", "Starter not found.", requestID);
     }
     ensureStarterOwnedByUser(starter);
 
@@ -465,10 +604,14 @@ const handler = async (req: Request) => {
       .from("starter-images")
       .download(body.image_path);
     if (imageError || !imageBlob) {
-      return jsonResponse(400, { error: "Could not download image" });
+      return errorResponse(400, "IMAGE_DOWNLOAD_FAILED", "Could not download image.", requestID);
     }
     const imageBytes = new Uint8Array(await imageBlob.arrayBuffer());
-    validateImage(imageBytes);
+    try {
+      validateImage(imageBytes);
+    } catch {
+      return errorResponse(400, "IMAGE_INVALID", "Image failed validation.", requestID);
+    }
 
     const context = await loadHistoryContext(body.starter_id, {
       fetchFeedingLogs: async (starterId) => {
@@ -540,9 +683,15 @@ const handler = async (req: Request) => {
       analysis: validated,
     });
   } catch (error) {
-    return jsonResponse(400, {
-      error: error instanceof Error ? error.message : "Unexpected error",
-    });
+    if (error instanceof AnalyzeStarterError) {
+      return errorResponse(error.status, error.code, error.message, requestID);
+    }
+    return errorResponse(
+      500,
+      "INTERNAL_ERROR",
+      "Analysis failed due to an unexpected internal error.",
+      requestID,
+    );
   }
 };
 

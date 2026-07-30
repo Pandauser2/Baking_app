@@ -177,7 +177,11 @@ final class SupabaseStarterRepository: StarterRepository {
             throw mapRepositoryError(AppError.analysisFailed, operation: "analyze starter image")
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            throw mapRepositoryError(AppError.analysisFailed, operation: "analyze starter image")
+            let mappedError = StarterAnalyzeHTTPErrorMapper.map(statusCode: httpResponse.statusCode, data: data)
+            #if DEBUG
+            StarterAnalyzeHTTPErrorMapper.debugLog(statusCode: httpResponse.statusCode, data: data)
+            #endif
+            throw mapRepositoryError(mappedError, operation: "analyze starter image")
         }
         do {
             return try StarterAnalyzeResponseParser.decode(data)
@@ -556,6 +560,69 @@ enum RepositoryErrorMapper {
         #if DEBUG
         print("[StarterRepository] \(operation) failed: \(String(describing: error))")
         #endif
+    }
+}
+
+private struct StarterAnalyzeErrorEnvelope: Decodable {
+    let errorCode: String
+    let message: String
+    let requestID: String
+
+    enum CodingKeys: String, CodingKey {
+        case errorCode = "error_code"
+        case message
+        case requestID = "request_id"
+    }
+}
+
+enum StarterAnalyzeHTTPErrorMapper {
+    static func map(statusCode: Int, data: Data) -> AppError {
+        guard let envelope = decodeEnvelope(data: data) else {
+            return .analysisFailed
+        }
+        switch envelope.errorCode {
+        case "AUTH_INVALID":
+            return .unknown("Your session is invalid. Please sign in again and retry analysis.")
+        case "STARTER_NOT_FOUND":
+            return .unknown("Starter not found. Refresh your starters and try again.")
+        case "IMAGE_DOWNLOAD_FAILED":
+            return .unknown("We couldn't read the uploaded image. Please choose another photo and retry.")
+        case "IMAGE_INVALID":
+            return .unknown("The uploaded image was rejected. Retake the photo and try again.")
+        case "PROVIDER_AUTH":
+            return .unknown("Analysis provider authentication failed. Please try again shortly.")
+        case "PROVIDER_QUOTA":
+            return .unknown("Analysis is temporarily unavailable due to provider quota limits. Please try again later.")
+        case "PROVIDER_RATE_LIMIT":
+            return .unknown("Analysis is temporarily rate-limited. Please wait a moment and retry.")
+        case "PROVIDER_TIMEOUT":
+            return .unknown("Analysis timed out. Please retry.")
+        case "PROVIDER_RESPONSE_INVALID":
+            return .unknown("The analysis provider returned an invalid response. Please retry with another photo.")
+        case "INTERNAL_ERROR":
+            fallthrough
+        default:
+            if !envelope.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .unknown(envelope.message)
+            }
+            if statusCode == 401 || statusCode == 403 {
+                return .unknown("Your session is invalid. Please sign in again and retry analysis.")
+            }
+            return .analysisFailed
+        }
+    }
+
+    #if DEBUG
+    static func debugLog(statusCode: Int, data: Data) {
+        let envelope = decodeEnvelope(data: data)
+        let requestID = envelope?.requestID ?? "unavailable"
+        let errorCode = envelope?.errorCode ?? "unavailable"
+        print("[StarterAnalysis] request_id=\(requestID) status=\(statusCode) error_code=\(errorCode)")
+    }
+    #endif
+
+    private static func decodeEnvelope(data: Data) -> StarterAnalyzeErrorEnvelope? {
+        try? JSONDecoder().decode(StarterAnalyzeErrorEnvelope.self, from: data)
     }
 }
 
