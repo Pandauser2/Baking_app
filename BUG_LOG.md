@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-30 | 1.0 / 1 | Added and fixed BUG-007 stale starter-list active-state consistency issue after active starter creation (Fixed, not Verified). |
 | 2026-07-27 | 1.0 / 1 | Finalized BUG-005 verification evidence: nil hydration RPC serialization fix, regression coverage, and green CI. |
 | 2026-07-27 | 1.0 / 1 | Verified BUG-005 in simulator and remote Supabase (starter + feeding ownership, single active starter). |
 | 2026-07-26 | 1.0 / 1 | Added BUG-005 (fixed) for missing `user_id` in starter/feeding inserts and BUG-006 (open) for developer-scaffold Home screen. |
@@ -34,6 +35,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
 | BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Verified | Starter and feeding inserts omit required user_id |
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
@@ -299,6 +301,40 @@ Current Home screen is a developer scaffold and does not represent final product
 #### Scope note
 
 This issue is tracked only in the bug log for now. No implementation changes are included in this fix.
+
+### BUG-007 — Starter list temporarily shows multiple active starters
+
+- **Date found:** 2026-07-30
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Area:** Starter Workflow — UI Consistency
+- **Priority:** P1
+- **Status:** Fixed
+
+#### Description
+
+Immediately after creating a new starter as active, the local list briefly showed both the previous starter and the newly created starter as `Active`.
+
+#### Root cause
+
+- `StarterWorkflowViewModel.createStarter` inserted the returned starter into the cached list.
+- The previous cached starter `active` flag was not reconciled locally before the next canonical reload.
+- The UI could briefly render stale local state until another refresh path corrected it.
+
+#### Fix implemented
+
+1. On successful active starter creation, the view model now immediately reconciles cached local state by marking all existing starters inactive and inserting the created active starter without duplicates.
+2. The view model then reloads starters from the repository as the authoritative backend state.
+3. If that refresh fails, the reconciled local state is retained and a safe nonblocking refresh message is shown.
+4. Home and Starter List now share the same `StarterWorkflowViewModel` instance and trigger refresh on return from Starter List.
+
+#### Acceptance criteria
+
+- Active starter creation never leaves more than one local `Active` badge during transient refresh windows.
+- Inactive starter creation preserves existing active starter.
+- Refresh failures do not convert successful creation into a user-visible creation failure.
+- No duplicate starter rows appear in local list state.
+- Focused tests and CI pass.
 
 ## New Bug Template
 

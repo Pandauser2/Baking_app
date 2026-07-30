@@ -59,8 +59,13 @@ final class StarterWorkflowViewModel: ObservableObject {
     func createStarter(name: String, hydrationPreference: Double?, active: Bool) async -> Bool {
         do {
             let starter = try await repository.createStarter(name: name, hydrationPreference: hydrationPreference, active: active)
-            starters.insert(starter, at: 0)
+            reconcileCreatedStarter(starter)
             analytics.track(.starterCreated)
+            do {
+                starters = try await repository.listStarters()
+            } catch {
+                errorMessage = "Starter created successfully, but we couldn't refresh the list yet. Pull to refresh."
+            }
             return true
         } catch {
             errorMessage = userMessage(error)
@@ -284,6 +289,24 @@ final class StarterWorkflowViewModel: ObservableObject {
             return appError.localizedDescription
         }
         return AppError.unknown("Something went wrong. Please try again.").localizedDescription
+    }
+
+    private func reconcileCreatedStarter(_ starter: Starter) {
+        var nextStarters = starters.filter { $0.id != starter.id }
+        if starter.active {
+            nextStarters = nextStarters.map { existing in
+                Starter(
+                    id: existing.id,
+                    userID: existing.userID,
+                    name: existing.name,
+                    hydrationPreference: existing.hydrationPreference,
+                    createdAt: existing.createdAt,
+                    active: false
+                )
+            }
+        }
+        nextStarters.insert(starter, at: 0)
+        starters = nextStarters
     }
 }
 

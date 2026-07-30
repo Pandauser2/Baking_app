@@ -110,6 +110,90 @@ final class StarterWorkflowViewModelTests: XCTestCase {
         XCTAssertEqual(repo.lastPersistInput?.qualityIssue, "slightly dark")
     }
 
+    func testCreateActiveStarterMarksPreviousCachedStarterInactiveImmediately() async {
+        let existing = makeStarter(id: UUID(), active: true, name: "Existing Active")
+        let created = makeStarter(id: UUID(), active: true, name: "PO Starter B")
+        let repo = FakeStarterRepository(starters: [existing])
+        repo.createStarterResult = created
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+
+        await viewModel.loadStarters()
+        repo.listStartersError = TestVMError.refreshFailed
+        let createdOK = await viewModel.createStarter(name: created.name, hydrationPreference: 100, active: true)
+
+        XCTAssertTrue(createdOK)
+        XCTAssertEqual(viewModel.starters.first?.id, created.id)
+        XCTAssertEqual(viewModel.starters.first(where: { $0.id == existing.id })?.active, false)
+        XCTAssertEqual(viewModel.starters.filter(\.active).count, 1)
+    }
+
+    func testCreateInactiveStarterPreservesCurrentActiveStarter() async {
+        let existing = makeStarter(id: UUID(), active: true, name: "Existing Active")
+        let created = makeStarter(id: UUID(), active: false, name: "Inactive Starter")
+        let repo = FakeStarterRepository(starters: [existing])
+        repo.createStarterResult = created
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+
+        await viewModel.loadStarters()
+        repo.listStartersError = TestVMError.refreshFailed
+        _ = await viewModel.createStarter(name: created.name, hydrationPreference: 80, active: false)
+
+        XCTAssertEqual(viewModel.starters.first(where: { $0.id == existing.id })?.active, true)
+        XCTAssertEqual(viewModel.starters.first(where: { $0.id == created.id })?.active, false)
+        XCTAssertEqual(viewModel.starters.filter(\.active).count, 1)
+    }
+
+    func testCreateStarterRefreshReplacesReconciledLocalState() async {
+        let existing = makeStarter(id: UUID(), active: true, name: "Existing Active")
+        let created = makeStarter(id: UUID(), active: true, name: "PO Starter B")
+        let canonical = [
+            makeStarter(id: created.id, active: true, name: created.name),
+            makeStarter(id: existing.id, active: false, name: existing.name)
+        ]
+        let repo = FakeStarterRepository(starters: [existing])
+        repo.createStarterResult = created
+        repo.listStartersResponses = [[existing], canonical]
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+
+        await viewModel.loadStarters()
+        _ = await viewModel.createStarter(name: created.name, hydrationPreference: 100, active: true)
+
+        XCTAssertEqual(viewModel.starters, canonical)
+    }
+
+    func testCreateStarterRefreshFailureRetainsOneActiveLocalState() async {
+        let existing = makeStarter(id: UUID(), active: true, name: "Existing Active")
+        let created = makeStarter(id: UUID(), active: true, name: "PO Starter B")
+        let repo = FakeStarterRepository(starters: [existing])
+        repo.createStarterResult = created
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+
+        await viewModel.loadStarters()
+        repo.listStartersError = TestVMError.refreshFailed
+        _ = await viewModel.createStarter(name: created.name, hydrationPreference: 100, active: true)
+
+        XCTAssertEqual(viewModel.starters.filter(\.active).count, 1)
+        XCTAssertEqual(
+            viewModel.errorMessage,
+            "Starter created successfully, but we couldn't refresh the list yet. Pull to refresh."
+        )
+    }
+
+    func testCreateStarterDoesNotInsertDuplicateStarterLocally() async {
+        let id = UUID()
+        let existing = makeStarter(id: id, active: false, name: "Existing")
+        let created = makeStarter(id: id, active: true, name: "Existing")
+        let repo = FakeStarterRepository(starters: [existing])
+        repo.createStarterResult = created
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+
+        await viewModel.loadStarters()
+        repo.listStartersError = TestVMError.refreshFailed
+        _ = await viewModel.createStarter(name: created.name, hydrationPreference: 100, active: true)
+
+        XCTAssertEqual(viewModel.starters.filter { $0.id == id }.count, 1)
+    }
+
     func testRefreshHomeContextUsesLatestActiveStarterAfterListChange() async {
         let starterA = makeStarter(id: UUID(), active: true, name: "Starter A")
         let starterB = makeStarter(id: UUID(), active: true, name: "Starter B")
@@ -320,6 +404,8 @@ private final class FakeStarterRepository: StarterRepository {
     var starters: [Starter]
     var listStartersResponses: [[Starter]] = []
     var listStartersError: Error?
+    var createStarterResult: Starter?
+    var createStarterError: Error?
     var nextAnalyzeResult: StarterAnalyzeResult?
     var nextStarterState: StarterState?
     var timeline: [StarterTimelineItem] = []
@@ -361,6 +447,12 @@ private final class FakeStarterRepository: StarterRepository {
         return starters
     }
     func createStarter(name: String, hydrationPreference: Double?, active: Bool) async throws -> Starter {
+        if let createStarterError {
+            throw createStarterError
+        }
+        if let createStarterResult {
+            return createStarterResult
+        }
         let starter = Starter(id: UUID(), userID: UUID(), name: name, hydrationPreference: hydrationPreference, createdAt: Date(), active: active)
         starters.insert(starter, at: 0)
         return starter
