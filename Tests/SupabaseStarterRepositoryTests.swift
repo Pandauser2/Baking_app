@@ -301,6 +301,58 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertEqual(mapped.errorCode, "PERSIST_VALIDATION_FAILED")
     }
 
+    func testPersistErrorMappingProductionPGRST202SignatureMismatch() throws {
+        let fixture: [String: Any?] = [
+            "code": "PGRST202",
+            "message": "Could not find function public.persist_starter_analysis(...)",
+            "details": "Searched for the function in the schema cache.",
+            "hint": NSNull()
+        ]
+        let data = try JSONSerialization.data(withJSONObject: fixture.compactMapValues { $0 })
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 404,
+            data: data,
+            requestID: "req-prod-fixture"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_VALIDATION_FAILED")
+        XCTAssertEqual(mapped.message, "The save request format was invalid.")
+    }
+
+    func testPersistPayloadIncludesNilQualityIssueAndScore() throws {
+        let analysis = StarterAIResponse(
+            scanType: "starter",
+            observations: ["Bubbles"],
+            diagnosis: ["Active"],
+            confidence: 0.8,
+            nextSteps: [StarterAIResponse.NextStep(instruction: "Feed now", timeWindowHours: 12)],
+            humanExplanation: "Looks active.",
+            riskFlags: [],
+            compareToPrevious: StarterAIResponse.CompareToPrevious(changed: true, explanation: "Improved rise."),
+            starterState: "active"
+        )
+        let payload = PersistStarterAnalysisPayload(
+            starterID: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            storagePath: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/2026/07/file.jpg",
+            qualityScore: nil,
+            qualityIssue: nil,
+            model: "gpt-4o-mini",
+            promptVersion: "v1",
+            confidence: analysis.confidence,
+            analysisJSON: analysis,
+            renderedExplanation: analysis.humanExplanation,
+            stateLabel: analysis.starterState,
+            recommendation: analysis.nextSteps[0].instruction,
+            dueHours: analysis.nextSteps[0].timeWindowHours
+        )
+
+        let encoded = try JSONEncoder().encode(payload)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertTrue(json.keys.contains("p_quality_score"))
+        XCTAssertTrue(json.keys.contains("p_quality_issue"))
+        XCTAssertTrue(json["p_quality_score"] is NSNull)
+        XCTAssertTrue(json["p_quality_issue"] is NSNull)
+    }
+
     func testPersistErrorMappingConflict() throws {
         let payload: [String: Any] = [
             "code": "23505",

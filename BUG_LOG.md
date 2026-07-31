@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Reopened BUG-010 after post-fix manual run still failed to transition to saved state (status set back to Open). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-010 and fixed starter-analysis save diagnostics + duplicate-save guard (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-009 and fixed non-starter subject handling with explicit invalid-subject contract (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added BUG-008 and implemented safe structured starter-analysis diagnostics with fixed error mapping (Fixed, not Verified). |
@@ -38,7 +39,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
-| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Fixed | Saving starter analysis fails |
+| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Open | Saving starter analysis fails |
 | BUG-009 | 2026-07-31 | Starter Workflow — Analysis Subject Validation | P1 | Fixed | Explicitly reject non-starter images |
 | BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
@@ -349,7 +350,7 @@ Immediately after creating a new starter as active, the local list briefly showe
 - **Environment:** iPhone 17 Simulator, iOS 26.5, `BakingApp-QA`
 - **Area:** Starter Workflow — Analysis
 - **Priority:** P0
-- **Status:** Fixed
+- **Status:** Open
 
 #### Description
 

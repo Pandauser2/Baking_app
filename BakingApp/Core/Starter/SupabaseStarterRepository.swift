@@ -201,6 +201,12 @@ final class SupabaseStarterRepository: StarterRepository {
     ) async throws -> PersistedStarterAnalysisIDs {
         let authSession = try await client.auth.session
         let requestID = UUID().uuidString.lowercased()
+        if let existing = try await reconcilePersistedAnalysisIDs(
+            starterID: starterID,
+            imagePath: imagePath
+        ) {
+            return existing
+        }
         let endpoint = supabaseURL
             .appendingPathComponent("rest")
             .appendingPathComponent("v1")
@@ -243,6 +249,14 @@ final class SupabaseStarterRepository: StarterRepository {
                 data: data,
                 requestID: requestID
             )
+            if mapped.errorCode == "PERSIST_CONFLICT" || mapped.errorCode == "PERSIST_RESPONSE_INVALID" {
+                if let reconciled = try await reconcilePersistedAnalysisIDs(
+                    starterID: starterID,
+                    imagePath: imagePath
+                ) {
+                    return reconciled
+                }
+            }
             #if DEBUG
             PersistStarterAnalysisHTTPErrorMapper.debugLog(
                 requestID: requestID,
@@ -255,6 +269,12 @@ final class SupabaseStarterRepository: StarterRepository {
         do {
             return try PersistStarterAnalysisResponseDecoder.decodeIDs(data)
         } catch {
+            if let reconciled = try await reconcilePersistedAnalysisIDs(
+                starterID: starterID,
+                imagePath: imagePath
+            ) {
+                return reconciled
+            }
             let mapped = PersistStarterAnalysisHTTPErrorMapper.mapResponseInvalid(requestID: requestID)
             #if DEBUG
             PersistStarterAnalysisHTTPErrorMapper.debugLog(
@@ -368,6 +388,31 @@ final class SupabaseStarterRepository: StarterRepository {
         }
         return try StarterRPCResponseDecoder.decodeSingleStarter(data)
     }
+
+    private func reconcilePersistedAnalysisIDs(starterID: UUID, imagePath: String) async throws -> PersistedStarterAnalysisIDs? {
+        let response = try await client
+            .from("scans")
+            .select("id, ai_analyses(id), recommendations(id)")
+            .eq("starter_id", value: starterID.uuidString.lowercased())
+            .eq("storage_path", value: imagePath)
+            .eq("scan_type", value: "starter")
+            .order("created_at", ascending: false)
+            .limit(1)
+            .execute()
+        let rows = try decode([PersistedScanLookupRow].self, from: response.data)
+        guard
+            let row = rows.first,
+            let analysisID = row.analyses.first?.id,
+            let recommendationID = row.recommendations.first?.id
+        else {
+            return nil
+        }
+        return PersistedStarterAnalysisIDs(
+            scanID: row.id,
+            analysisID: analysisID,
+            recommendationID: recommendationID
+        )
+    }
 }
 
 struct StarterInsert: Codable {
@@ -404,7 +449,7 @@ struct FeedingLogInsert: Codable {
     }
 }
 
-private struct PersistStarterAnalysisPayload: Codable {
+struct PersistStarterAnalysisPayload: Codable {
     let starterID: UUID
     let storagePath: String
     let qualityScore: Double?
@@ -432,6 +477,30 @@ private struct PersistStarterAnalysisPayload: Codable {
         case recommendation = "p_recommendation"
         case dueHours = "p_due_hours"
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(starterID, forKey: .starterID)
+        try container.encode(storagePath, forKey: .storagePath)
+        if let qualityScore {
+            try container.encode(qualityScore, forKey: .qualityScore)
+        } else {
+            try container.encodeNil(forKey: .qualityScore)
+        }
+        if let qualityIssue {
+            try container.encode(qualityIssue, forKey: .qualityIssue)
+        } else {
+            try container.encodeNil(forKey: .qualityIssue)
+        }
+        try container.encode(model, forKey: .model)
+        try container.encode(promptVersion, forKey: .promptVersion)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(analysisJSON, forKey: .analysisJSON)
+        try container.encode(renderedExplanation, forKey: .renderedExplanation)
+        try container.encode(stateLabel, forKey: .stateLabel)
+        try container.encode(recommendation, forKey: .recommendation)
+        try container.encode(dueHours, forKey: .dueHours)
+    }
 }
 
 private struct TimelineRow: Decodable {
@@ -452,6 +521,26 @@ private struct TimelineRow: Decodable {
         analyses = try container.decodeIfPresent([StarterAnalysis].self, forKey: .analyses) ?? []
         recommendations = try container.decodeIfPresent([Recommendation].self, forKey: .recommendations) ?? []
         scan = try StarterScan(from: decoder)
+    }
+}
+
+private struct PersistedScanLookupRow: Decodable {
+    struct AnalysisRow: Decodable {
+        let id: UUID
+    }
+
+    struct RecommendationRow: Decodable {
+        let id: UUID
+    }
+
+    let id: UUID
+    let analyses: [AnalysisRow]
+    let recommendations: [RecommendationRow]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case analyses = "ai_analyses"
+        case recommendations
     }
 }
 
@@ -715,7 +804,14 @@ enum PersistStarterAnalysisHTTPErrorMapper {
         if rawCode == "23505" || statusCode == 409 {
             return PersistStarterAnalysisSafeError(
                 errorCode: "PERSIST_CONFLICT",
-                message: "This analysis was already saved.",
+                message: "This analysis is already saved.",
+                requestID: requestID
+            )
+        }
+        if rawCode == "pgrst202" {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "PERSIST_VALIDATION_FAILED",
+                message: "The save request format was invalid.",
                 requestID: requestID
             )
         }
