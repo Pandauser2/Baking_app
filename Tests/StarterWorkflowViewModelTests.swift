@@ -50,6 +50,60 @@ final class StarterWorkflowViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.persistedIDs)
     }
 
+    func testInvalidSubjectShowsSuppliedMessageAndIsNotPersisted() async {
+        let starterID = UUID()
+        let repo = FakeStarterRepository()
+        repo.nextAnalyzeResult = StarterAnalyzeResult(
+            model: nil,
+            promptVersion: nil,
+            outcome: .invalidSubject(
+                reason: .notStarter,
+                message: "This doesn’t appear to be a sourdough starter. Please choose another photo."
+            )
+        )
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+        viewModel.validatedImage = StarterValidatedImage(
+            jpegData: Data(repeating: 1, count: 12_000),
+            qualityScore: 1.0,
+            qualityIssue: nil,
+            pixelSize: CGSize(width: 1000, height: 1000)
+        )
+
+        await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
+        XCTAssertNil(viewModel.pendingAIResponse)
+        XCTAssertEqual(
+            viewModel.errorMessage,
+            "This doesn’t appear to be a sourdough starter. Please choose another photo."
+        )
+        XCTAssertEqual(repo.persistCallCount, 0)
+    }
+
+    func testInvalidSubjectSaveAttemptDoesNotPersist() async {
+        let starterID = UUID()
+        let repo = FakeStarterRepository()
+        repo.nextAnalyzeResult = StarterAnalyzeResult(
+            model: nil,
+            promptVersion: nil,
+            outcome: .invalidSubject(
+                reason: .uncertain,
+                message: "We’re not sure this is a sourdough starter. Please choose another photo."
+            )
+        )
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+        viewModel.validatedImage = StarterValidatedImage(
+            jpegData: Data(repeating: 1, count: 12_000),
+            qualityScore: 1.0,
+            qualityIssue: nil,
+            pixelSize: CGSize(width: 1000, height: 1000)
+        )
+
+        await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
+        await viewModel.savePendingAnalysis(starterID: starterID)
+
+        XCTAssertEqual(repo.persistCallCount, 0)
+        XCTAssertEqual(viewModel.errorMessage, "No analysis result available to save.")
+    }
+
     func testRecommendationOutcomeTransitionUpdatesRecommendation() async {
         let starterID = UUID()
         let recommendation = makeRecommendation(outcome: RecommendationOutcome.unknown.rawValue)
@@ -358,7 +412,7 @@ final class StarterWorkflowViewModelTests: XCTestCase {
         StarterAnalyzeResult(
             model: "gpt-4o-mini",
             promptVersion: "v1-server",
-            analysis: makeAIResponse()
+            outcome: .starterAnalysis(makeAIResponse())
         )
     }
 
@@ -411,6 +465,7 @@ private final class FakeStarterRepository: StarterRepository {
     var timeline: [StarterTimelineItem] = []
     var persistError: Error?
     var analyzeCallCount = 0
+    var persistCallCount = 0
     var starterStatesByStarterID: [UUID: StarterState] = [:]
     var feedingLogsByStarterID: [UUID: [FeedingLog]] = [:]
     var timelineByStarterID: [UUID: [StarterTimelineItem]] = [:]
@@ -489,20 +544,23 @@ private final class FakeStarterRepository: StarterRepository {
         return nextAnalyzeResult ?? StarterAnalyzeResult(
             model: "gpt-4o-mini",
             promptVersion: "v1",
-            analysis: StarterAIResponse(
-                scanType: "starter",
-                observations: ["Bubbles visible"],
-                diagnosis: ["active"],
-                confidence: 0.7,
-                nextSteps: [.init(instruction: "Feed now", timeWindowHours: 12)],
-                humanExplanation: "Looks active.",
-                riskFlags: [],
-                compareToPrevious: .init(changed: true, explanation: "More bubbles"),
-                starterState: "active"
+            outcome: .starterAnalysis(
+                StarterAIResponse(
+                    scanType: "starter",
+                    observations: ["Bubbles visible"],
+                    diagnosis: ["active"],
+                    confidence: 0.7,
+                    nextSteps: [.init(instruction: "Feed now", timeWindowHours: 12)],
+                    humanExplanation: "Looks active.",
+                    riskFlags: [],
+                    compareToPrevious: .init(changed: true, explanation: "More bubbles"),
+                    starterState: "active"
+                )
             )
         )
     }
     func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {
+        persistCallCount += 1
         lastPersistInput = (starterID, imagePath, qualityScore, qualityIssue, model, promptVersion, response)
         if let persistError { throw persistError }
         return PersistedStarterAnalysisIDs(scanID: UUID(), analysisID: UUID(), recommendationID: UUID())

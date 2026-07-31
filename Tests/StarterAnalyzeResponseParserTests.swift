@@ -6,6 +6,7 @@ final class StarterAnalyzeResponseParserTests: XCTestCase {
     func testDecodeWrappedResponseAcceptsValidPayload() throws {
         let wrapped = """
         {
+          "result_type": "starter_analysis",
           "prompt_version": "v1",
           "model": "gpt-4o-mini",
           "analysis": {
@@ -24,12 +25,17 @@ final class StarterAnalyzeResponseParserTests: XCTestCase {
         let result = try StarterAnalyzeResponseParser.decode(Data(wrapped.utf8))
         XCTAssertEqual(result.model, "gpt-4o-mini")
         XCTAssertEqual(result.promptVersion, "v1")
-        XCTAssertEqual(result.analysis.scanType, "starter")
+        if case .starterAnalysis(let analysis) = result.outcome {
+            XCTAssertEqual(analysis.scanType, "starter")
+        } else {
+            XCTFail("Expected starter_analysis outcome")
+        }
     }
 
     func testDecodeWrappedResponseRejectsUnknownAnalysisField() {
         let wrapped = """
         {
+          "result_type": "starter_analysis",
           "prompt_version": "v1",
           "model": "gpt-4o-mini",
           "analysis": {
@@ -47,6 +53,25 @@ final class StarterAnalyzeResponseParserTests: XCTestCase {
         }
         """
         XCTAssertThrowsError(try StarterAnalyzeResponseParser.decode(Data(wrapped.utf8)))
+    }
+
+    func testDecodeInvalidSubjectAcceptsSafeMessage() throws {
+        let wrapped = """
+        {
+          "result_type": "invalid_subject",
+          "reason": "not_starter",
+          "message": "This doesn’t appear to be a sourdough starter. Please choose another photo."
+        }
+        """
+        let result = try StarterAnalyzeResponseParser.decode(Data(wrapped.utf8))
+        if case .invalidSubject(let reason, let message) = result.outcome {
+            XCTAssertEqual(reason, .notStarter)
+            XCTAssertEqual(message, "This doesn’t appear to be a sourdough starter. Please choose another photo.")
+        } else {
+            XCTFail("Expected invalid_subject outcome")
+        }
+        XCTAssertNil(result.model)
+        XCTAssertNil(result.promptVersion)
     }
 }
 

@@ -10,6 +10,7 @@ import {
   ensureStarterOwnedByUser,
   loadHistoryContext,
   parseAnalyzeStarterRequest,
+  validateAnalyzeStarterOutcome,
   validateStoragePathOwnership,
   validateAuthorizationHeader,
   validateImage,
@@ -29,6 +30,13 @@ function validAiPayload() {
     risk_flags: [],
     compare_to_previous: { changed: true, explanation: "More bubbles than prior scan." },
     starter_state: "active",
+  };
+}
+
+function validStarterOutcome() {
+  return {
+    result_type: "starter_analysis",
+    analysis: validAiPayload(),
   };
 }
 
@@ -76,6 +84,30 @@ Deno.test("malformed AI JSON is rejected", () => {
   assertThrows(() => validateStarterAiResponse({ wrong: true }), Error);
 });
 
+Deno.test("clear non-starter maps to invalid_subject", () => {
+  const parsed = validateAnalyzeStarterOutcome({
+    result_type: "invalid_subject",
+    reason: "not_starter",
+    message: "This doesn’t appear to be a sourdough starter. Please choose another photo.",
+  });
+  assertEquals(parsed.result_type, "invalid_subject");
+  if (parsed.result_type === "invalid_subject") {
+    assertEquals(parsed.reason, "not_starter");
+  }
+});
+
+Deno.test("uncertain subject maps to invalid_subject", () => {
+  const parsed = validateAnalyzeStarterOutcome({
+    result_type: "invalid_subject",
+    reason: "uncertain",
+    message: "We’re not sure this is a sourdough starter. Please choose another photo.",
+  });
+  assertEquals(parsed.result_type, "invalid_subject");
+  if (parsed.result_type === "invalid_subject") {
+    assertEquals(parsed.reason, "uncertain");
+  }
+});
+
 Deno.test("invalid confidence is rejected", () => {
   const payload = validAiPayload();
   payload.confidence = 1.2;
@@ -99,7 +131,7 @@ Deno.test("provider timeout retries once", async () => {
     }
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(validAiPayload()) } }],
+        choices: [{ message: { content: JSON.stringify(validStarterOutcome()) } }],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -120,7 +152,7 @@ Deno.test("provider timeout retries once", async () => {
     mockFetch,
     5,
   );
-  assertEquals(result.scan_type, "starter");
+  assertEquals(result.result_type, "starter_analysis");
   assertEquals(calls, 2);
 });
 
@@ -131,7 +163,7 @@ Deno.test("provider 5xx retries once", async () => {
     if (calls === 1) return new Response("error", { status: 500 });
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(validAiPayload()) } }],
+        choices: [{ message: { content: JSON.stringify(validStarterOutcome()) } }],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -151,7 +183,7 @@ Deno.test("provider 5xx retries once", async () => {
     },
     mockFetch,
   );
-  assertEquals(result.starter_state, "active");
+  assertEquals(result.result_type, "starter_analysis");
   assertEquals(calls, 2);
 });
 
@@ -169,7 +201,7 @@ Deno.test("JSON repair attempt runs once after malformed json", async () => {
     }
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(validAiPayload()) } }],
+        choices: [{ message: { content: JSON.stringify(validStarterOutcome()) } }],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -189,7 +221,7 @@ Deno.test("JSON repair attempt runs once after malformed json", async () => {
     },
     mockFetch,
   );
-  assertEquals(result.scan_type, "starter");
+  assertEquals(result.result_type, "starter_analysis");
   assertEquals(calls, 2);
 });
 
@@ -199,7 +231,7 @@ Deno.test("invalid provider schema maps to provider response invalid error", asy
     calls += 1;
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ scan_type: "starter" }) } }],
+        choices: [{ message: { content: JSON.stringify({ result_type: "starter_analysis" }) } }],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -225,6 +257,106 @@ Deno.test("invalid provider schema maps to provider response invalid error", asy
     "invalid structured output",
   );
   assertEquals(calls, 2);
+});
+
+Deno.test("valid starter returns starter_analysis outcome", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(validStarterOutcome()) } }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  const result = await callOpenAIWithRetry(
+    "key",
+    "model",
+    buildPngBytes(512, 512),
+    {
+      feeding_logs: [],
+      recent_scans: [],
+      recent_analyses: [],
+      starter_state: null,
+      unresolved_recommendations: [],
+      recent_outcomes: [],
+    },
+    mockFetch,
+  );
+  assertEquals(result.result_type, "starter_analysis");
+});
+
+Deno.test("clear non-starter image returns invalid_subject outcome", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              result_type: "invalid_subject",
+              reason: "not_starter",
+              message: "This doesn’t appear to be a sourdough starter. Please choose another photo.",
+            }),
+          },
+        }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  const result = await callOpenAIWithRetry(
+    "key",
+    "model",
+    buildPngBytes(512, 512),
+    {
+      feeding_logs: [],
+      recent_scans: [],
+      recent_analyses: [],
+      starter_state: null,
+      unresolved_recommendations: [],
+      recent_outcomes: [],
+    },
+    mockFetch,
+  );
+  assertEquals(result.result_type, "invalid_subject");
+  if (result.result_type === "invalid_subject") {
+    assertEquals(result.reason, "not_starter");
+  }
+});
+
+Deno.test("uncertain image returns invalid_subject outcome", async () => {
+  const mockFetch: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              result_type: "invalid_subject",
+              reason: "uncertain",
+              message: "We’re not sure this is a sourdough starter. Please choose another photo.",
+            }),
+          },
+        }],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  const result = await callOpenAIWithRetry(
+    "key",
+    "model",
+    buildPngBytes(512, 512),
+    {
+      feeding_logs: [],
+      recent_scans: [],
+      recent_analyses: [],
+      starter_state: null,
+      unresolved_recommendations: [],
+      recent_outcomes: [],
+    },
+    mockFetch,
+  );
+  assertEquals(result.result_type, "invalid_subject");
+  if (result.result_type === "invalid_subject") {
+    assertEquals(result.reason, "uncertain");
+  }
 });
 
 Deno.test("history context selection returns expected slices", async () => {

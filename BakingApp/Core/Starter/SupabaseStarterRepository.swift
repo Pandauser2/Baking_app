@@ -440,28 +440,55 @@ enum StarterAnalyzeResponseParser {
         guard let root = json as? [String: Any] else {
             throw AppError.malformedResponse
         }
-        guard let model = root["model"] as? String else {
+        guard let resultType = root["result_type"] as? String else {
             throw AppError.malformedResponse
         }
-        guard let promptVersion = root["prompt_version"] as? String else {
+        switch resultType {
+        case "starter_analysis":
+            guard let model = root["model"] as? String else {
+                throw AppError.malformedResponse
+            }
+            guard let promptVersion = root["prompt_version"] as? String else {
+                throw AppError.malformedResponse
+            }
+            guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AppError.malformedResponse
+            }
+            guard !promptVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AppError.malformedResponse
+            }
+            guard let analysisObject = root["analysis"] else {
+                throw AppError.malformedResponse
+            }
+            let analysisData = try JSONSerialization.data(withJSONObject: analysisObject)
+            let analysis = try StarterAIContractValidator.decodeStrict(analysisData)
+            return StarterAnalyzeResult(
+                model: model,
+                promptVersion: promptVersion,
+                outcome: .starterAnalysis(analysis)
+            )
+        case "invalid_subject":
+            guard let reasonRaw = root["reason"] as? String else {
+                throw AppError.malformedResponse
+            }
+            guard let reason = InvalidSubjectReason(rawValue: reasonRaw) else {
+                throw AppError.malformedResponse
+            }
+            guard let message = root["message"] as? String else {
+                throw AppError.malformedResponse
+            }
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw AppError.malformedResponse
+            }
+            return StarterAnalyzeResult(
+                model: nil,
+                promptVersion: nil,
+                outcome: .invalidSubject(reason: reason, message: trimmed)
+            )
+        default:
             throw AppError.malformedResponse
         }
-        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AppError.malformedResponse
-        }
-        guard !promptVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AppError.malformedResponse
-        }
-        guard let analysisObject = root["analysis"] else {
-            throw AppError.malformedResponse
-        }
-        let analysisData = try JSONSerialization.data(withJSONObject: analysisObject)
-        let analysis = try StarterAIContractValidator.decodeStrict(analysisData)
-        return StarterAnalyzeResult(
-            model: model,
-            promptVersion: promptVersion,
-            analysis: analysis
-        )
     }
 }
 

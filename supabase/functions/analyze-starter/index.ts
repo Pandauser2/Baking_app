@@ -25,6 +25,21 @@ export type StarterAIResponse = {
   starter_state: string;
 };
 
+export type InvalidSubjectReason = "not_starter" | "uncertain";
+
+export type InvalidSubjectOutcome = {
+  result_type: "invalid_subject";
+  reason: InvalidSubjectReason;
+  message: string;
+};
+
+export type StarterAnalysisOutcome = {
+  result_type: "starter_analysis";
+  analysis: StarterAIResponse;
+};
+
+export type AnalyzeStarterOutcome = InvalidSubjectOutcome | StarterAnalysisOutcome;
+
 export type AnalyzeStarterErrorCode =
   | "AUTH_INVALID"
   | "STARTER_NOT_FOUND"
@@ -41,6 +56,11 @@ export type AnalyzeStarterErrorResponse = {
   error_code: AnalyzeStarterErrorCode;
   message: string;
   request_id: string;
+};
+
+const INVALID_SUBJECT_MESSAGES: Record<InvalidSubjectReason, string> = {
+  not_starter: "This doesn’t appear to be a sourdough starter. Please choose another photo.",
+  uncertain: "We’re not sure this is a sourdough starter. Please choose another photo.",
 };
 
 type OpenAIMessage = {
@@ -378,6 +398,42 @@ export function validateStarterAiResponse(payload: unknown): StarterAIResponse {
   };
 }
 
+export function validateAnalyzeStarterOutcome(payload: unknown): AnalyzeStarterOutcome {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("AI payload must be an object");
+  }
+  const root = payload as Record<string, unknown>;
+  if (root.result_type === "starter_analysis") {
+    const keys = Object.keys(root);
+    if (keys.length !== 2 || !keys.includes("result_type") || !keys.includes("analysis")) {
+      throw new Error("starter_analysis payload contains unknown fields");
+    }
+    return {
+      result_type: "starter_analysis",
+      analysis: validateStarterAiResponse(root.analysis),
+    };
+  }
+  if (root.result_type === "invalid_subject") {
+    const keys = Object.keys(root);
+    if (keys.length !== 3 || !keys.includes("result_type") || !keys.includes("reason") || !keys.includes("message")) {
+      throw new Error("invalid_subject payload contains unknown fields");
+    }
+    const reason = root.reason;
+    if (reason !== "not_starter" && reason !== "uncertain") {
+      throw new Error("invalid_subject reason is invalid");
+    }
+    if (typeof root.message !== "string" || root.message.trim().length === 0) {
+      throw new Error("invalid_subject message is required");
+    }
+    return {
+      result_type: "invalid_subject",
+      reason,
+      message: root.message.trim(),
+    };
+  }
+  throw new Error("AI payload result_type is invalid");
+}
+
 export async function loadHistoryContext(starterId: string, deps: ReadContextDependencies): Promise<LoadedContext> {
   const feeding_logs = await deps.fetchFeedingLogs(starterId);
   const recent_scans = await deps.fetchRecentScans(starterId);
@@ -408,19 +464,31 @@ function buildSystemPrompt(context: LoadedContext): string {
     "Separate observations from inference.",
     "Use visible evidence from the image and context.",
     `Context: ${JSON.stringify(context)}`,
-    "Schema:",
+    "Schema option 1 (valid starter):",
     "{",
-    '  "scan_type":"starter",',
-    '  "observations":["short visible fact"],',
-    '  "diagnosis":["state label"],',
-    '  "confidence":0.0,',
-    '  "next_steps":[{"instruction":"actionable recommendation","time_window_hours":12}],',
-    '  "human_explanation":"concise explanation",',
-    '  "risk_flags":[],',
-    '  "compare_to_previous":{"changed":true,"explanation":"what visibly changed"},',
-    '  "starter_state":"active"',
+    '  "result_type":"starter_analysis",',
+    '  "analysis":{',
+    '    "scan_type":"starter",',
+    '    "observations":["short visible fact"],',
+    '    "diagnosis":["state label"],',
+    '    "confidence":0.0,',
+    '    "next_steps":[{"instruction":"actionable recommendation","time_window_hours":12}],',
+    '    "human_explanation":"concise explanation",',
+    '    "risk_flags":[],',
+    '    "compare_to_previous":{"changed":true,"explanation":"what visibly changed"},',
+    '    "starter_state":"active"',
+    "  }",
+    "}",
+    "Schema option 2 (not a starter or uncertain subject):",
+    "{",
+    '  "result_type":"invalid_subject",',
+    '  "reason":"not_starter",',
+    '  "message":"This doesn’t appear to be a sourdough starter. Please choose another photo."',
     "}",
     "Rules:",
+    "- If the photo is clearly not a sourdough starter, return invalid_subject with reason not_starter",
+    "- If the subject is uncertain or ambiguous, return invalid_subject with reason uncertain",
+    "- Never force a starter analysis when subject is not a sourdough starter",
     "- maximum 3 observations",
     "- exactly 1 next_steps item",
     "- confidence between 0.0 and 1.0",
@@ -435,7 +503,7 @@ export async function callOpenAIWithRetry(
   context: LoadedContext,
   fetchFn: typeof fetch = fetch,
   timeoutMs: number = OPENAI_TIMEOUT_MS,
-): Promise<StarterAIResponse> {
+): Promise<AnalyzeStarterOutcome> {
   const base64 = toBase64(imageBytes);
   const messages: OpenAIMessage[] = [
     { role: "system", content: buildSystemPrompt(context) },
@@ -528,13 +596,13 @@ export async function callOpenAIWithRetry(
   }
 
   try {
-    return validateStarterAiResponse(JSON.parse(rawContent));
+    return validateAnalyzeStarterOutcome(JSON.parse(rawContent));
   } catch {
     try {
       const repaired = await requestOpenAI(
-        "Your previous response was invalid JSON for the required schema. Return corrected JSON only.",
+        "Your previous response was invalid JSON for the required schema. Return corrected JSON only with one allowed result_type variant.",
       );
-      return validateStarterAiResponse(JSON.parse(repaired));
+      return validateAnalyzeStarterOutcome(JSON.parse(repaired));
     } catch {
       throw new AnalyzeStarterError(
         "PROVIDER_RESPONSE_INVALID",
@@ -677,10 +745,18 @@ const handler = async (req: Request) => {
     });
 
     const validated = await callOpenAIWithRetry(openAIKey, openAIModel, imageBytes, context);
+    if (validated.result_type === "invalid_subject") {
+      return jsonResponse(200, {
+        result_type: "invalid_subject",
+        reason: validated.reason,
+        message: INVALID_SUBJECT_MESSAGES[validated.reason],
+      } satisfies InvalidSubjectOutcome);
+    }
     return jsonResponse(200, {
+      result_type: "starter_analysis",
       prompt_version: body.prompt_version ?? PROMPT_VERSION,
       model: openAIModel,
-      analysis: validated,
+      analysis: validated.analysis,
     });
   } catch (error) {
     if (error instanceof AnalyzeStarterError) {

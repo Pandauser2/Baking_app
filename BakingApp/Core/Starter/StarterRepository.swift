@@ -25,9 +25,19 @@ struct PersistedStarterAnalysisIDs: Codable, Equatable {
 }
 
 struct StarterAnalyzeResult: Equatable {
-    let model: String
-    let promptVersion: String
-    let analysis: StarterAIResponse
+    let model: String?
+    let promptVersion: String?
+    let outcome: StarterAnalyzeOutcome
+}
+
+enum StarterAnalyzeOutcome: Equatable {
+    case starterAnalysis(StarterAIResponse)
+    case invalidSubject(reason: InvalidSubjectReason, message: String)
+}
+
+enum InvalidSubjectReason: String, Codable, Equatable {
+    case notStarter = "not_starter"
+    case uncertain
 }
 
 protocol StarterRepository {

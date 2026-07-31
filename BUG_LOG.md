@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Added BUG-009 and fixed non-starter subject handling with explicit invalid-subject contract (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added BUG-008 and implemented safe structured starter-analysis diagnostics with fixed error mapping (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added and fixed BUG-007 stale starter-list active-state consistency issue after active starter creation (Fixed, not Verified). |
 | 2026-07-27 | 1.0 / 1 | Finalized BUG-005 verification evidence: nil hydration RPC serialization fix, regression coverage, and green CI. |
@@ -36,6 +37,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-009 | 2026-07-31 | Starter Workflow — Analysis Subject Validation | P1 | Fixed | Explicitly reject non-starter images |
 | BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
@@ -387,6 +389,43 @@ Starter scan upload succeeds, but analysis can fail with a generic error message
 - iOS no longer discards safe non-2xx payloads and shows actionable errors.
 - DEBUG diagnostics include only correlation ID, status, and error code.
 - No auth/RLS/storage ownership weakening introduced.
+
+### BUG-009 — Explicitly reject non-starter images
+
+- **Date found:** 2026-07-31
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5, `BakingApp-QA`
+- **Area:** Starter Workflow — Analysis Subject Validation
+- **Priority:** P1
+- **Status:** Fixed
+
+#### Description
+
+Non-starter photos (for example, waterfall images) could pass client-side quality checks and reach AI analysis, but the backend contract only allowed starter-analysis schema. This produced provider validation errors instead of a product-safe subject rejection.
+
+#### Root cause
+
+- The analysis contract only supported one shape (starter analysis).
+- There was no schema-valid result for "not a sourdough starter" or "uncertain subject."
+- The system treated non-starter cases as provider/schema failures rather than valid product outcomes.
+
+#### Fix implemented
+
+1. Added discriminated result contract support:
+   - `starter_analysis`
+   - `invalid_subject` (`not_starter` or `uncertain`)
+2. Edge Function now validates both variants strictly and returns `invalid_subject` as HTTP 200.
+3. Added safe rejection messages for non-starter and uncertain subject outcomes.
+4. iOS parser and workflow now decode `invalid_subject`, display the safe message, and block persistence.
+5. Persistence path remains unchanged for valid `starter_analysis`.
+6. Added focused Deno and iOS tests for both variants, malformed provider output, and no-persist rejection behavior.
+
+#### Acceptance criteria
+
+- Non-starter/uncertain images return valid `invalid_subject` outcomes.
+- Rejections do not persist scans, analyses, recommendations, or starter-state updates.
+- Valid starter analysis flow still persists normally.
+- Provider/network/schema failures continue using structured error codes.
 
 ## New Bug Template
 

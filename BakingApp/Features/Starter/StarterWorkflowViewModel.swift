@@ -16,6 +16,7 @@ final class StarterWorkflowViewModel: ObservableObject {
     @Published var validatedImage: StarterValidatedImage?
     @Published var pendingImagePath: String?
     @Published var pendingAIResponse: StarterAIResponse?
+    @Published var pendingInvalidSubjectMessage: String?
     @Published var persistedIDs: PersistedStarterAnalysisIDs?
     @Published var recommendation: Recommendation?
 
@@ -194,10 +195,12 @@ final class StarterWorkflowViewModel: ObservableObject {
             let validated = try imageValidator.validate(data: data)
             validatedImage = validated
             selectedImage = UIImage(data: validated.jpegData)
+            pendingInvalidSubjectMessage = nil
             errorMessage = nil
         } catch {
             pendingAIResponse = nil
             pendingAnalyzeResult = nil
+            pendingInvalidSubjectMessage = nil
             persistedIDs = nil
             errorMessage = userMessage(error)
         }
@@ -230,9 +233,20 @@ final class StarterWorkflowViewModel: ObservableObject {
             lastAnalyzeDate = Date()
             pendingImagePath = path
             let analyzeResult = try await repository.analyzeStarter(starterID: starterID, imagePath: path, promptVersion: "v1")
-            pendingAnalyzeResult = analyzeResult
-            pendingAIResponse = analyzeResult.analysis
-            persistedIDs = nil
+            switch analyzeResult.outcome {
+            case .starterAnalysis(let analysis):
+                pendingAnalyzeResult = analyzeResult
+                pendingAIResponse = analysis
+                pendingInvalidSubjectMessage = nil
+                persistedIDs = nil
+                errorMessage = nil
+            case .invalidSubject(_, let message):
+                pendingAnalyzeResult = nil
+                pendingAIResponse = nil
+                pendingInvalidSubjectMessage = message
+                persistedIDs = nil
+                errorMessage = message
+            }
         } catch {
             errorMessage = userMessage(error)
         }
@@ -241,9 +255,15 @@ final class StarterWorkflowViewModel: ObservableObject {
     func savePendingAnalysis(starterID: UUID) async {
         guard
             let pendingAnalyzeResult,
-            let pendingImagePath
+            let pendingImagePath,
+            let promptVersion = pendingAnalyzeResult.promptVersion,
+            let model = pendingAnalyzeResult.model
         else {
             errorMessage = "No analysis result available to save."
+            return
+        }
+        guard case .starterAnalysis(let response) = pendingAnalyzeResult.outcome else {
+            errorMessage = "This image cannot be saved as a starter analysis."
             return
         }
         isLoading = true
@@ -254,9 +274,9 @@ final class StarterWorkflowViewModel: ObservableObject {
                 imagePath: pendingImagePath,
                 qualityScore: validatedImage?.qualityScore,
                 qualityIssue: validatedImage?.qualityIssue,
-                model: pendingAnalyzeResult.model,
-                promptVersion: pendingAnalyzeResult.promptVersion,
-                response: pendingAnalyzeResult.analysis
+                model: model,
+                promptVersion: promptVersion,
+                response: response
             )
             persistedIDs = ids
             await loadStarterState(starterID: starterID)
