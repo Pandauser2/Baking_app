@@ -37,6 +37,7 @@ struct StarterTimelineView: View {
             }
         }
         .navigationTitle("Starter Timeline")
+        .accessibilityIdentifier(HomeNavigationAccessibilityID.timelineRoot)
         .task {
             await viewModel.loadTimeline(starterID: starter.id)
         }

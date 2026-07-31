@@ -83,12 +83,25 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: BakingApp
+  BakingAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pandauser2.BakingAppUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: BakingApp
+    dependencies:
+      - target: BakingApp
 schemes:
   BakingApp:
     build:
       targets:
         BakingApp: all
         BakingAppTests: [test]
+        BakingAppUITests: [test]
     run:
       config: Debug
       storeKitConfiguration: BakingApp/Resources/BakingApp.storekit
@@ -96,11 +109,13 @@ schemes:
       config: Debug
       targets:
         - BakingAppTests
+        - BakingAppUITests
   BakingApp-QA:
     build:
       targets:
         BakingApp: all
         BakingAppTests: [test]
+        BakingAppUITests: [test]
     run:
       config: Debug
       storeKitConfiguration: BakingApp/Resources/BakingApp.storekit
@@ -110,4 +125,5 @@ schemes:
       config: Debug
       targets:
         - BakingAppTests
+        - BakingAppUITests
 

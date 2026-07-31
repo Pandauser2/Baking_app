@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-test:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -128,6 +128,33 @@ jobs:
             -only-testing:BakingAppTests \
             CODE_SIGNING_ALLOWED=NO \
             test | tee build/logs/xcodebuild-test.log
+
+      - name: Run UI navigation tests (Debug scheme)
+        run: |
+          set -euo pipefail
+          DESTINATION="id=${SIMULATOR_ID}"
+          echo "Using destination: ${DESTINATION}"
+          xcodebuild \
+            -project BakingApp.xcodeproj \
+            -scheme BakingApp \
+            -destination "$DESTINATION" \
+            -only-testing:BakingAppUITests \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee build/logs/xcodebuild-uitest-debug.log
+
+      - name: Run UI navigation tests (QA scheme)
+        run: |
+          set -euo pipefail
+          DESTINATION="id=${SIMULATOR_ID}"
+          echo "Using destination: ${DESTINATION}"
+          xcodebuild \
+            -project BakingApp.xcodeproj \
+            -scheme BakingApp-QA \
+            -destination "$DESTINATION" \
+            -only-testing:BakingAppUITests/HomeNavigationUITests/testHomeDetailsTimelineBackToHome \
+            -only-testing:BakingAppUITests/HomeNavigationUITests/testSwipeBackFromTimeline \
+            CODE_SIGNING_ALLOWED=NO \
+            test | tee build/logs/xcodebuild-uitest-qa.log
 
       - name: Run Edge Function tests
         run: |

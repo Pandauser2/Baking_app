@@ -33,18 +33,14 @@ struct StarterDetailView: View {
             }
 
             Section("Workflow") {
-                NavigationLink("Log Feeding") {
-                    FeedingLogCreateView(starter: starter, viewModel: viewModel)
-                }
-                NavigationLink("Feeding History") {
-                    FeedingHistoryView(starter: starter, viewModel: viewModel)
-                }
-                NavigationLink("Scan Starter") {
-                    StarterScanView(starter: starter, viewModel: viewModel)
-                }
-                NavigationLink("Timeline") {
-                    StarterTimelineView(starter: starter, viewModel: viewModel)
-                }
+                NavigationLink("Log Feeding", value: HomeNavigationRoute.feedingLog(starter.id))
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowLogFeeding)
+                NavigationLink("Feeding History", value: HomeNavigationRoute.feedingHistory(starter.id))
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowFeedingHistory)
+                NavigationLink("Scan Starter", value: HomeNavigationRoute.scanStarter(starter.id))
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowScanStarter)
+                NavigationLink("Timeline", value: HomeNavigationRoute.timeline(starter.id))
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowTimeline)
             }
 
             Section("Phase C") {
@@ -61,6 +57,7 @@ struct StarterDetailView: View {
             }
         }
         .navigationTitle(starter.name)
+        .accessibilityIdentifier(HomeNavigationAccessibilityID.starterDetailRoot)
         .task {
             await viewModel.loadStarterState(starterID: starter.id)
             await viewModel.loadTimeline(starterID: starter.id)
@@ -70,4 +67,3 @@ struct StarterDetailView: View {
         }
     }
 }
-

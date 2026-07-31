@@ -15,19 +15,15 @@ struct StarterListView: View {
         List {
             if let activeStarter = viewModel.activeStarter {
                 Section("Active Starter") {
-                    NavigationLink(activeStarter.name) {
-                        StarterDetailView(starter: activeStarter, viewModel: viewModel)
-                    }
-                    .font(.headline)
+                    NavigationLink(activeStarter.name, value: HomeNavigationRoute.starterDetail(activeStarter.id))
+                        .font(.headline)
                 }
             }
 
             Section("All Starters") {
                 ForEach(viewModel.starters) { starter in
                     HStack {
-                        NavigationLink(starter.name) {
-                            StarterDetailView(starter: starter, viewModel: viewModel)
-                        }
+                        NavigationLink(starter.name, value: HomeNavigationRoute.starterDetail(starter.id))
                         Spacer()
                         if starter.active {
                             Text("Active")

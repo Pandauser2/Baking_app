@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Fixed BUG-003 visible-but-nonfunctional back navigation via single path-based Home NavigationStack (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Verified BUG-010 with manual persistence/outcome evidence; added and fixed BUG-011 previous-scan comparison (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Fully resolved BUG-010 end-to-end: nested timeline decode + post-save refresh + idempotent persist RPC (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Reopened BUG-010 after post-fix manual run still failed to transition to saved state (status set back to Open). |
@@ -49,7 +50,7 @@ Central source of truth for product bugs and manual QA findings.
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
 | BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Verified | Starter and feeding inserts omit required user_id |
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
-| BUG-003 | 2026-07-26 | Navigation | P1 | Open | Multiple app screens lack visible back navigation |
+| BUG-003 | 2026-07-26 | Navigation | P1 | Fixed | Back navigation is visible but nonfunctional |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
 | BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Open | Weak signup password shows incorrect generic error |
 
@@ -169,47 +170,39 @@ Swipe down on the sheet or relaunch the app.
 - Existing purchase/restore flow still works.
 - Tests and CI pass.
 
-### BUG-003 — Multiple app screens lack visible back navigation
+### BUG-003 — Back navigation is visible but nonfunctional
 
 - **Date found:** 2026-07-26
 - **Version / Build:** 1.0 / 1
-- **Environment:** iPhone 17 Simulator, iOS 26.5
+- **Environment:** BakingApp-QA, iPhone 17 Simulator, iOS 26.5
 - **Area:** Navigation
-- **Priority:** P1
-- **Status:** Open
+- **Priority:** P1 (Phase B release blocker)
+- **Status:** Fixed
 
 #### Description
 
-Multiple non-root screens do not show a visible Back or Close control, making navigation confusing or trapping the user.
+Back navigation can appear in the navigation bar but does not pop the stack. Exact Phase B reproduction: Home → Open starter details → Timeline → tap visible back button → nothing happens. Expected: Timeline pops back to Starter Details immediately. Broader symptom previously logged: some screens lacked clear return controls; this update centers on visible-but-nonfunctional native back navigation.
 
-#### Actual result
+#### Root cause
 
-- Users cannot clearly return to the previous screen.
-- Navigation behavior is inconsistent across the app.
-- Some modal screens also lack a Close button.
+Home owned multiple `navigationDestination(isPresented:)` pushes, while Starter Details pushed Timeline/Scan/History via classic nested `NavigationLink(destination:)` views. That hybrid stack left a visible system back chevron whose tap did not reliably pop the path.
 
-#### Expected result
+#### Fix implemented
 
-- Pushed screens use the native iOS Back button.
-- Modal sheets have a visible Close button.
-- Root screens do not show an unnecessary Back button.
-- Swipe-back and swipe-to-dismiss remain available.
-
-#### Proposed solution
-
-1. Audit every Phase A and Phase B screen.
-2. Ensure one shared `NavigationStack` owns pushed navigation.
-3. Remove nested `NavigationStack`s that suppress native back controls.
-4. Use `navigationDestination` or `NavigationLink` for pushed screens.
-5. Add toolbar Close buttons to modal sheets.
-6. Do not add custom back buttons where native navigation works.
-7. Add accessibility labels and navigation tests.
+1. Single Home `NavigationStack(path:)` owning typed `HomeNavigationRoute` values.
+2. Replaced hybrid `isPresented` + destination-builder links with `NavigationLink(value:)` / path appends.
+3. Analysis Result appends onto the same Home path (no nested `isPresented` destination).
+4. Modal create-starter sheet keeps its own `NavigationStack` (correct for sheets).
+5. Accessibility identifiers + UI tests for Home → Details → Timeline → Back → Details → Back → Home, plus restart, empty/populated timeline, double-tap, swipe-back, Debug and QA schemes.
 
 #### Acceptance criteria
 
-- Every non-root screen has an obvious return path.
-- No screen traps the user.
-- Native swipe navigation works.
+- Timeline → Starter Details back works by button tap.
+- Edge-swipe back works where supported.
+- Starter Details → Home, Feeding History, Log Feeding, Scan Starter, and Analysis Result back paths work.
+- No blank screen or lost navigation state.
+- Native back control remains VoiceOver-labelled with adequate hit target.
+- Timeline/recommendation data remain intact after navigating back/forward.
 - Paywall handling remains tracked separately as `BUG-002`.
 - Tests and CI pass.
 

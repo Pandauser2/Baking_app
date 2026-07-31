@@ -4,13 +4,13 @@ import SwiftUI
 struct StarterScanView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var billingManager: BillingManager
+    @Environment(\.homeNavigationPath) private var homeNavigationPath
 
     let starter: Starter
     @ObservedObject var viewModel: StarterWorkflowViewModel
 
     @State private var showCamera = false
     @State private var showPaywall = false
-    @State private var navigateToResult = false
 
     var body: some View {
         ScrollView {
@@ -60,7 +60,11 @@ struct StarterScanView: View {
                     }
                     Task {
                         await viewModel.analyzeStarter(starterID: starter.id, userID: session.userID)
-                        navigateToResult = viewModel.pendingAIResponse != nil
+                        if viewModel.pendingAIResponse != nil {
+                            homeNavigationPath?.wrappedValue.append(
+                                HomeNavigationRoute.analysisResult(starter.id)
+                            )
+                        }
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -79,6 +83,7 @@ struct StarterScanView: View {
             .padding()
         }
         .navigationTitle("Scan Starter")
+        .accessibilityIdentifier(HomeNavigationAccessibilityID.scanRoot)
         .task(id: viewModel.selectedItem) {
             await viewModel.handleSelectedPhoto()
         }
@@ -98,9 +103,5 @@ struct StarterScanView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
-        .navigationDestination(isPresented: $navigateToResult) {
-            StarterAnalysisResultView(starter: starter, viewModel: viewModel)
-        }
     }
 }
-

@@ -29,6 +29,9 @@ final class AppEnvironment: ObservableObject {
     }
 
     static func live() -> AppEnvironment {
+        if UITestingBootstrap.isEnabled {
+            return uiTesting()
+        }
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             let fallbackAuth = AuthManager(client: NoopAuthClient())
             let fallbackBilling = BillingManager(client: NoopBillingClient())
@@ -99,6 +102,24 @@ final class AppEnvironment: ObservableObject {
                 starterRepository: NoopStarterRepository()
             )
         }
+    }
+
+    private static func uiTesting() -> AppEnvironment {
+        let defaults = UserDefaults(suiteName: "bakingapp.uitesting") ?? .standard
+        defaults.set(true, forKey: "onboarding.completed")
+        let authManager = AuthManager(client: UITestingAuthClient())
+        let billingManager = BillingManager(client: NoopBillingClient())
+        return AppEnvironment(
+            configResult: .failure(.missingValue("UI testing uses fixture repositories")),
+            authManager: authManager,
+            billingManager: billingManager,
+            onboardingStore: OnboardingStore(defaults: defaults),
+            analytics: NoopAnalyticsTracker(),
+            loafAnalysisRepository: NoopLoafAnalysisRepository(),
+            starterRepository: UITestingStarterRepository(
+                populatedTimeline: UITestingBootstrap.usesPopulatedTimeline
+            )
+        )
     }
 }
 

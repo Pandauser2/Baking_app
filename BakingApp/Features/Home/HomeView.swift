@@ -7,22 +7,17 @@ struct HomeView: View {
 
     @StateObject private var viewModel: StarterWorkflowViewModel
     @State private var isShowingPaywall = false
-    @State private var showStarterList = false
     @State private var showCreateStarter = false
-    @State private var feedStarter: Starter?
-    @State private var scanStarter: Starter?
-    @State private var selectedStarterForDetail: Starter?
-    @State private var showFeedingLog = false
-    @State private var showScanStarter = false
-    @State private var showStarterDetail = false
+    @State private var path = NavigationPath()
     @State private var hasLoadedHomeData = false
+    @State private var previousPathCount = 0
 
     init(viewModel: StarterWorkflowViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.large) {
                     header
@@ -57,6 +52,7 @@ struct HomeView: View {
             }
             .background(AppTheme.Colors.background.ignoresSafeArea())
             .navigationTitle("Home")
+            .accessibilityIdentifier(HomeNavigationAccessibilityID.homeRoot)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -77,32 +73,19 @@ struct HomeView: View {
             .sheet(isPresented: $isShowingPaywall) {
                 PaywallView()
             }
-            .navigationDestination(isPresented: $showStarterList) {
-                StarterListView(viewModel: viewModel)
-            }
-            .onChange(of: showStarterList) { isPresented in
-                guard !isPresented else { return }
-                Task { await viewModel.refreshHomeContext() }
-            }
             .sheet(isPresented: $showCreateStarter) {
                 NavigationStack {
                     StarterCreateView(viewModel: viewModel)
                 }
             }
-            .navigationDestination(isPresented: $showStarterDetail) {
-                if let starter = selectedStarterForDetail {
-                    StarterDetailView(starter: starter, viewModel: viewModel)
-                }
+            .navigationDestination(for: HomeNavigationRoute.self) { route in
+                destination(for: route)
             }
-            .navigationDestination(isPresented: $showFeedingLog) {
-                if let starter = feedStarter {
-                    FeedingLogCreateView(starter: starter, viewModel: viewModel)
+            .onChange(of: path.count) { newCount in
+                if newCount < previousPathCount {
+                    Task { await viewModel.refreshHomeContext() }
                 }
-            }
-            .navigationDestination(isPresented: $showScanStarter) {
-                if let starter = scanStarter {
-                    StarterScanView(starter: starter, viewModel: viewModel)
-                }
+                previousPathCount = newCount
             }
             .task {
                 guard !hasLoadedHomeData else { return }
@@ -110,6 +93,73 @@ struct HomeView: View {
                 await viewModel.refreshHomeContext()
             }
         }
+        .environment(\.homeNavigationPath, $path)
+    }
+
+    @ViewBuilder
+    private func destination(for route: HomeNavigationRoute) -> some View {
+        switch route {
+        case .starterList:
+            StarterListView(viewModel: viewModel)
+        case .starterDetail(let starterID):
+            if let starter = starter(withID: starterID) {
+                StarterDetailView(starter: starter, viewModel: viewModel)
+            } else {
+                missingStarterView
+            }
+        case .feedingLog(let starterID):
+            if let starter = starter(withID: starterID) {
+                FeedingLogCreateView(starter: starter, viewModel: viewModel)
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.feedingLogRoot)
+            } else {
+                missingStarterView
+            }
+        case .feedingHistory(let starterID):
+            if let starter = starter(withID: starterID) {
+                FeedingHistoryView(starter: starter, viewModel: viewModel)
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.feedingHistoryRoot)
+            } else {
+                missingStarterView
+            }
+        case .scanStarter(let starterID):
+            if let starter = starter(withID: starterID) {
+                StarterScanView(starter: starter, viewModel: viewModel)
+            } else {
+                missingStarterView
+            }
+        case .analysisResult(let starterID):
+            if let starter = starter(withID: starterID) {
+                StarterAnalysisResultView(starter: starter, viewModel: viewModel)
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.analysisResultRoot)
+            } else {
+                missingStarterView
+            }
+        case .timeline(let starterID):
+            if let starter = starter(withID: starterID) {
+                StarterTimelineView(starter: starter, viewModel: viewModel)
+            } else {
+                missingStarterView
+            }
+        }
+    }
+
+    private var missingStarterView: some View {
+        VStack(spacing: AppTheme.Spacing.medium) {
+            Image(systemName: "leaf")
+                .imageScale(.large)
+            Text("Starter unavailable")
+                .font(.headline)
+            Text("This starter is no longer available. Go back and refresh Home.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+        .navigationTitle("Starter")
+    }
+
+    private func starter(withID id: UUID) -> Starter? {
+        viewModel.starters.first(where: { $0.id == id }) ?? viewModel.activeStarter.flatMap { $0.id == id ? $0 : nil }
     }
 
     private var header: some View {
@@ -173,21 +223,19 @@ struct HomeView: View {
                     .tint(AppTheme.Colors.accent)
                 case .logFeeding:
                     Button("Log feeding") {
-                        feedStarter = starter
-                        showFeedingLog = true
+                        path.append(HomeNavigationRoute.feedingLog(starter.id))
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(AppTheme.Colors.accent)
                 }
 
                 Button("Scan starter") {
-                    scanStarter = starter
-                    showScanStarter = true
+                    path.append(HomeNavigationRoute.scanStarter(starter.id))
                 }
                 .buttonStyle(.bordered)
 
                 Button("View all starters") {
-                    showStarterList = true
+                    path.append(HomeNavigationRoute.starterList)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AppTheme.Colors.secondaryText)
@@ -218,12 +266,12 @@ struct HomeView: View {
                         .foregroundStyle(AppTheme.Colors.secondaryText)
                 }
                 Button("Open starter details") {
-                    selectedStarterForDetail = starter
-                    showStarterDetail = true
+                    path.append(HomeNavigationRoute.starterDetail(starter.id))
                 }
                 .buttonStyle(.plain)
                 .font(.footnote)
                 .foregroundStyle(AppTheme.Colors.accent)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.openStarterDetails)
             }
         }
     }
