@@ -287,6 +287,20 @@ final class SupabaseStarterRepository: StarterRepository {
         }
     }
 
+    func fetchRecommendation(recommendationID: UUID) async throws -> Recommendation {
+        do {
+            let response = try await client
+                .from("recommendations")
+                .select()
+                .eq("id", value: recommendationID.uuidString.lowercased())
+                .single()
+                .execute()
+            return try decode(Recommendation.self, from: response.data)
+        } catch {
+            throw mapRepositoryError(error, operation: "load recommendation")
+        }
+    }
+
     func listTimeline(starterID: UUID) async throws -> [StarterTimelineItem] {
         do {
             let response = try await client
@@ -296,7 +310,7 @@ final class SupabaseStarterRepository: StarterRepository {
                 .eq("scan_type", value: "starter")
                 .order("created_at", ascending: false)
                 .execute()
-            let rows = try decode([TimelineRow].self, from: response.data)
+            let rows = try TimelineRowDecoder.decodeRows(response.data)
             return rows.map { row in
                 StarterTimelineItem(
                     id: row.id,
@@ -351,9 +365,7 @@ final class SupabaseStarterRepository: StarterRepository {
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(T.self, from: data)
+        try SupabaseJSONDecoder.make().decode(type, from: data)
     }
 
     private func mapRepositoryError(_ error: Error, operation: String) -> AppError {
@@ -503,7 +515,7 @@ struct PersistStarterAnalysisPayload: Codable {
     }
 }
 
-private struct TimelineRow: Decodable {
+struct TimelineRow: Decodable {
     let id: UUID
     let scan: StarterScan
     let analyses: [StarterAnalysis]
@@ -518,9 +530,15 @@ private struct TimelineRow: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        analyses = try container.decodeIfPresent([StarterAnalysis].self, forKey: .analyses) ?? []
-        recommendations = try container.decodeIfPresent([Recommendation].self, forKey: .recommendations) ?? []
+        analyses = try PostgrestRelationDecoder.decodeManyOrOne(StarterAnalysis.self, from: container, forKey: .analyses)
+        recommendations = try PostgrestRelationDecoder.decodeManyOrOne(Recommendation.self, from: container, forKey: .recommendations)
         scan = try StarterScan(from: decoder)
+    }
+}
+
+enum TimelineRowDecoder {
+    static func decodeRows(_ data: Data) throws -> [TimelineRow] {
+        try SupabaseJSONDecoder.make().decode([TimelineRow].self, from: data)
     }
 }
 
@@ -541,6 +559,13 @@ private struct PersistedScanLookupRow: Decodable {
         case id
         case analyses = "ai_analyses"
         case recommendations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        analyses = try PostgrestRelationDecoder.decodeManyOrOne(AnalysisRow.self, from: container, forKey: .analyses)
+        recommendations = try PostgrestRelationDecoder.decodeManyOrOne(RecommendationRow.self, from: container, forKey: .recommendations)
     }
 }
 
@@ -645,8 +670,7 @@ struct SetActiveStarterPayload: Encodable {
 
 enum StarterRPCResponseDecoder {
     static func decodeSingleStarter(_ data: Data) throws -> Starter {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = SupabaseJSONDecoder.make()
         if let decoded = try? decoder.decode(Starter.self, from: data) {
             return decoded
         }
@@ -864,8 +888,7 @@ enum PersistStarterAnalysisHTTPErrorMapper {
 
 enum PersistStarterAnalysisResponseDecoder {
     static func decodeIDs(_ data: Data) throws -> PersistedStarterAnalysisIDs {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = SupabaseJSONDecoder.make()
         if let decoded = try? decoder.decode(PersistedStarterAnalysisIDs.self, from: data) {
             return decoded
         }

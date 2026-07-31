@@ -1,6 +1,7 @@
 # Xcode
 DerivedData/
 build/
+artifacts/
 .DS_Store
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/

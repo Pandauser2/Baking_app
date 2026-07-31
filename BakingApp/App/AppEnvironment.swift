@@ -160,6 +160,9 @@ private struct NoopStarterRepository: StarterRepository {
     func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {
         throw AppError.configuration("Configuration missing")
     }
+    func fetchRecommendation(recommendationID: UUID) async throws -> Recommendation {
+        throw AppError.configuration("Configuration missing")
+    }
     func listTimeline(starterID: UUID) async throws -> [StarterTimelineItem] { [] }
     func updateRecommendationOutcome(recommendationID: UUID, outcome: RecommendationOutcome) async throws -> Recommendation {
         throw AppError.configuration("Configuration missing")

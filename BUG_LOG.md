@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Fully resolved BUG-010 end-to-end: nested timeline decode + post-save refresh + idempotent persist RPC (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Reopened BUG-010 after post-fix manual run still failed to transition to saved state (status set back to Open). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-010 and fixed starter-analysis save diagnostics + duplicate-save guard (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-009 and fixed non-starter subject handling with explicit invalid-subject contract (Fixed, not Verified). |
@@ -39,7 +40,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
-| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Open | Saving starter analysis fails |
+| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Fixed | Saving starter analysis fails |
 | BUG-009 | 2026-07-31 | Starter Workflow — Analysis Subject Validation | P1 | Fixed | Explicitly reject non-starter images |
 | BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
@@ -441,37 +442,30 @@ Non-starter photos (for example, waterfall images) could pass client-side qualit
 
 #### Description
 
-After successful starter analysis, tapping `Save Analysis` could show the generic error "Analysis failed. Please try again." The failure path did not surface the actual persistence cause.
+After successful starter analysis, tapping `Save Analysis` could leave the app in a broken saved state: Save button disappeared, recommendation card did not appear, and UI showed "We received an unexpected response from the server. Please try again."
 
 #### Root cause
 
-- The iOS persistence path treated every non-2xx `persist_starter_analysis` response as a generic `.analysisFailed`.
-- Non-2xx RPC bodies were discarded, so actionable failure signals were lost.
-- Save taps were not guarded against repeat submission while a save was in flight.
+- Persistence RPC could commit successfully, then post-save refresh failed.
+- Timeline nested query returns one-to-one `ai_analyses` as a JSON object; iOS decoded only `[StarterAnalysis]` arrays.
+- That `DecodingError` was mapped to "unexpected response from the server" after `persistedIDs` was set, so Save disappeared without a recommendation.
+- Earlier layers (nullable RPC args, missing path uniqueness) also contributed and remain hardened.
 
 #### Fix implemented
 
-1. Added safe persistence error mapping for non-2xx RPC responses with six codes:
-   - `PERSIST_AUTH_FAILED`
-   - `STARTER_NOT_FOUND`
-   - `PERSIST_VALIDATION_FAILED`
-   - `PERSIST_CONFLICT`
-   - `PERSIST_DATABASE_ERROR`
-   - `PERSIST_RESPONSE_INVALID`
-2. Added DEBUG-only diagnostics for persistence failures containing only:
-   - `request_id` (client correlation ID)
-   - HTTP status
-   - safe `error_code`
-3. Added robust RPC response decoding for both object and array shapes.
-4. Added save-submission guardrails so repeated taps do not fire duplicate save requests from the app.
-5. Added real Supabase integration check script to verify successful persistence plus rollback behavior when validation fails.
+1. Flexible PostgREST relation decoding for nested `ai_analyses` / `recommendations` (object or array).
+2. Fractional ISO-8601 date decoding for Postgres timestamps.
+3. Post-save refresh uses returned recommendation ID first; timeline refresh is secondary and cannot make a successful save appear failed.
+4. Clear stale errors before/after successful save; non-destructive refresh guidance only if recommendation refresh fails.
+5. Idempotent `persist_starter_analysis` by storage path plus unique index `scans_starter_user_path_unique`.
+6. Real-backend fixtures and E2E script proving RPC, row counts, restart reload, and decoder compatibility.
 
 #### Acceptance criteria
 
-- Non-2xx persistence responses are decoded and mapped to safe actionable errors.
-- No SQL/raw backend internals are exposed to users.
-- Save action is not re-submitted while already saving or after save success.
-- Persistence remains atomic for successful writes and failed calls roll back.
+- Successful DB commit transitions UI to saved state with recommendation card.
+- Timeline decode failures after save do not present as save failures.
+- Duplicate save retries return the same IDs and create exactly one scan/analysis/recommendation per storage path.
+- Real linked-Supabase E2E passes with restart/reload proof.
 
 ## New Bug Template
 

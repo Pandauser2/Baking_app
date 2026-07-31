@@ -122,6 +122,53 @@ final class StarterWorkflowViewModelTests: XCTestCase {
 
         XCTAssertEqual(repo.persistCallCount, 1)
         XCTAssertNotNil(viewModel.persistedIDs)
+        XCTAssertNotNil(viewModel.recommendation)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testSuccessfulSaveLoadsRecommendationEvenIfTimelineFails() async {
+        let starterID = UUID()
+        let repo = FakeStarterRepository()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
+        repo.timelineError = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "nested object"))
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+        viewModel.validatedImage = StarterValidatedImage(
+            jpegData: Data(repeating: 1, count: 12_000),
+            qualityScore: 0.95,
+            qualityIssue: nil,
+            pixelSize: CGSize(width: 1000, height: 1000)
+        )
+
+        await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
+        await viewModel.savePendingAnalysis(starterID: starterID)
+
+        XCTAssertNotNil(viewModel.persistedIDs)
+        XCTAssertNotNil(viewModel.recommendation)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(repo.fetchRecommendationCallCount, 1)
+    }
+
+    func testSuccessfulSaveWithRecommendationRefreshFailureShowsNonDestructiveMessage() async {
+        let starterID = UUID()
+        let repo = FakeStarterRepository()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
+        repo.fetchRecommendationError = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "bad"))
+        repo.timelineError = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "bad timeline"))
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+        viewModel.validatedImage = StarterValidatedImage(
+            jpegData: Data(repeating: 1, count: 12_000),
+            qualityScore: 0.95,
+            qualityIssue: nil,
+            pixelSize: CGSize(width: 1000, height: 1000)
+        )
+
+        await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
+        await viewModel.savePendingAnalysis(starterID: starterID)
+
+        XCTAssertNotNil(viewModel.persistedIDs)
+        XCTAssertNil(viewModel.recommendation)
+        XCTAssertEqual(viewModel.errorMessage, "Analysis saved. We couldn't refresh details yet. Pull to refresh.")
+        XCTAssertEqual(repo.fetchRecommendationCallCount, 2)
     }
 
     func testRecommendationOutcomeTransitionUpdatesRecommendation() async {
@@ -579,11 +626,39 @@ private final class FakeStarterRepository: StarterRepository {
             )
         )
     }
+    var nextPersistedIDs: PersistedStarterAnalysisIDs?
+    var recommendationByID: [UUID: Recommendation] = [:]
+    var fetchRecommendationError: Error?
+    var fetchRecommendationCallCount = 0
+
     func persistStarterAnalysis(starterID: UUID, imagePath: String, qualityScore: Double?, qualityIssue: String?, model: String, promptVersion: String, response: StarterAIResponse) async throws -> PersistedStarterAnalysisIDs {
         persistCallCount += 1
         lastPersistInput = (starterID, imagePath, qualityScore, qualityIssue, model, promptVersion, response)
         if let persistError { throw persistError }
-        return PersistedStarterAnalysisIDs(scanID: UUID(), analysisID: UUID(), recommendationID: UUID())
+        let ids = nextPersistedIDs ?? PersistedStarterAnalysisIDs(scanID: UUID(), analysisID: UUID(), recommendationID: UUID())
+        if recommendationByID[ids.recommendationID] == nil {
+            recommendationByID[ids.recommendationID] = Recommendation(
+                id: ids.recommendationID,
+                userID: UUID(),
+                scanID: ids.scanID,
+                recommendation: response.nextSteps[0].instruction,
+                dueAt: Date().addingTimeInterval(12 * 3600),
+                completedAt: nil,
+                outcome: RecommendationOutcome.unknown.rawValue,
+                createdAt: Date()
+            )
+        }
+        return ids
+    }
+    func fetchRecommendation(recommendationID: UUID) async throws -> Recommendation {
+        fetchRecommendationCallCount += 1
+        if let fetchRecommendationError {
+            throw fetchRecommendationError
+        }
+        if let recommendation = recommendationByID[recommendationID] {
+            return recommendation
+        }
+        throw AppError.unknown("Recommendation not found")
     }
     func listTimeline(starterID: UUID) async throws -> [StarterTimelineItem] {
         lastTimelineRequestID = starterID

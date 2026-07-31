@@ -69,6 +69,7 @@ protocol StarterRepository {
         promptVersion: String,
         response: StarterAIResponse
     ) async throws -> PersistedStarterAnalysisIDs
+    func fetchRecommendation(recommendationID: UUID) async throws -> Recommendation
     func listTimeline(starterID: UUID) async throws -> [StarterTimelineItem]
     func updateRecommendationOutcome(recommendationID: UUID, outcome: RecommendationOutcome) async throws -> Recommendation
     func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL

@@ -136,11 +136,17 @@ jobs:
           deno test supabase/functions/analyze-starter/index_test.ts
           deno test --allow-read supabase/migrations/0004_phase_b_persist_starter_analysis_hardening_test.ts
           deno test --allow-read supabase/migrations/0005_phase_b_starter_atomic_active_rpcs_test.ts
+          deno test --allow-read supabase/migrations/0006_phase_b_starter_persist_idempotency_test.ts
+          deno test --allow-read supabase/migrations/0007_phase_b_starter_persist_idempotency_enforcement_test.ts
+          deno test --allow-read supabase/migrations/0008_phase_b_persist_idempotent_rpc_test.ts
 
-      - name: Upload build/test logs on failure
-        if: failure()
+      - name: Upload build/test logs and E2E artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-ci-logs
-          path: build/logs
+          path: |
+            build/logs
+            artifacts/e2e
+          if-no-files-found: ignore
 

@@ -270,6 +270,7 @@ final class StarterWorkflowViewModel: ObservableObject {
         }
         isLoading = true
         defer { isLoading = false }
+        errorMessage = nil
         do {
             let ids = try await repository.persistStarterAnalysis(
                 starterID: starterID,
@@ -281,14 +282,65 @@ final class StarterWorkflowViewModel: ObservableObject {
                 response: response
             )
             persistedIDs = ids
-            await loadStarterState(starterID: starterID)
-            await loadTimeline(starterID: starterID)
-            if !didTrackFirstRecommendationView {
+            errorMessage = nil
+            await refreshAfterSuccessfulSave(starterID: starterID, persistedIDs: ids)
+            if recommendation != nil, !didTrackFirstRecommendationView {
                 analytics.track(.firstAIRecommendationViewed)
                 didTrackFirstRecommendationView = true
             }
         } catch {
-            errorMessage = userMessage(error)
+            // Never clear a confirmed save if a later refresh path throws unexpectedly.
+            if persistedIDs == nil {
+                errorMessage = userMessage(error)
+            } else {
+                errorMessage = "Analysis saved. We couldn't refresh details yet. Pull to refresh."
+            }
+        }
+    }
+
+    private func refreshAfterSuccessfulSave(starterID: UUID, persistedIDs: PersistedStarterAnalysisIDs) async {
+        recommendation = await fetchRecommendationWithRetry(recommendationID: persistedIDs.recommendationID)
+        starterState = await fetchStarterStateWithRetry(starterID: starterID)
+
+        // Timeline is secondary and must never make a successful save appear failed.
+        do {
+            timeline = try await repository.listTimeline(starterID: starterID)
+            if recommendation == nil {
+                recommendation = timeline.first(where: { $0.id == persistedIDs.scanID })?.recommendation
+                    ?? timeline.first?.recommendation
+            }
+        } catch {
+            // Intentionally ignore timeline decode/network failures after confirmed persistence.
+        }
+
+        if recommendation == nil {
+            errorMessage = "Analysis saved. We couldn't refresh details yet. Pull to refresh."
+        } else {
+            errorMessage = nil
+        }
+    }
+
+    private func fetchRecommendationWithRetry(recommendationID: UUID) async -> Recommendation? {
+        do {
+            return try await repository.fetchRecommendation(recommendationID: recommendationID)
+        } catch {
+            do {
+                return try await repository.fetchRecommendation(recommendationID: recommendationID)
+            } catch {
+                return nil
+            }
+        }
+    }
+
+    private func fetchStarterStateWithRetry(starterID: UUID) async -> StarterState? {
+        do {
+            return try await repository.fetchStarterState(starterID: starterID)
+        } catch {
+            do {
+                return try await repository.fetchStarterState(starterID: starterID)
+            } catch {
+                return starterState
+            }
         }
     }
 

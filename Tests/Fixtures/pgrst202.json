@@ -1,0 +1,6 @@
+{
+  "code": "PGRST202",
+  "details": "Searched for the function public.persist_starter_analysis with parameter p_starter_id in the schema cache, but no matches were found.",
+  "hint": null,
+  "message": "Could not find the function public.persist_starter_analysis without required args in the schema cache"
+}
