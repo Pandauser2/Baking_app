@@ -39,6 +39,7 @@ struct StarterAnalysisResultView: View {
                             Task { await viewModel.savePendingAnalysis(starterID: starter.id) }
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(viewModel.isLoading)
                     } else if let recommendation = viewModel.recommendation {
                         RecommendationCardView(recommendation: recommendation) { outcome in
                             Task { await viewModel.markRecommendationOutcome(outcome) }

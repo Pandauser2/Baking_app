@@ -104,6 +104,26 @@ final class StarterWorkflowViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.errorMessage, "No analysis result available to save.")
     }
 
+    func testSaveAnalysisDoesNotPersistTwiceAfterSuccess() async {
+        let starterID = UUID()
+        let repo = FakeStarterRepository()
+        repo.nextAnalyzeResult = makeAnalyzeResult()
+        let viewModel = StarterWorkflowViewModel(repository: repo, analytics: NoopStarterAnalytics(), isProUser: true)
+        viewModel.validatedImage = StarterValidatedImage(
+            jpegData: Data(repeating: 1, count: 12_000),
+            qualityScore: 0.95,
+            qualityIssue: nil,
+            pixelSize: CGSize(width: 1000, height: 1000)
+        )
+
+        await viewModel.analyzeStarter(starterID: starterID, userID: UUID())
+        await viewModel.savePendingAnalysis(starterID: starterID)
+        await viewModel.savePendingAnalysis(starterID: starterID)
+
+        XCTAssertEqual(repo.persistCallCount, 1)
+        XCTAssertNotNil(viewModel.persistedIDs)
+    }
+
     func testRecommendationOutcomeTransitionUpdatesRecommendation() async {
         let starterID = UUID()
         let recommendation = makeRecommendation(outcome: RecommendationOutcome.unknown.rawValue)

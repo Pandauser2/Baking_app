@@ -246,6 +246,95 @@ final class SupabaseStarterRepositoryTests: XCTestCase {
         XCTAssertEqual(error, .analysisFailed)
     }
 
+    func testPersistResponseDecoderAcceptsArrayShape() throws {
+        let ids = PersistedStarterAnalysisIDs(scanID: UUID(), analysisID: UUID(), recommendationID: UUID())
+        let data = try JSONEncoder().encode([ids])
+        let decoded = try PersistStarterAnalysisResponseDecoder.decodeIDs(data)
+        XCTAssertEqual(decoded, ids)
+    }
+
+    func testPersistResponseDecoderAcceptsObjectShape() throws {
+        let ids = PersistedStarterAnalysisIDs(scanID: UUID(), analysisID: UUID(), recommendationID: UUID())
+        let data = try JSONEncoder().encode(ids)
+        let decoded = try PersistStarterAnalysisResponseDecoder.decodeIDs(data)
+        XCTAssertEqual(decoded, ids)
+    }
+
+    func testPersistErrorMappingAuthFailed() {
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 401,
+            data: Data(),
+            requestID: "req-1"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_AUTH_FAILED")
+    }
+
+    func testPersistErrorMappingStarterNotFound() throws {
+        let payload: [String: Any] = [
+            "code": "P0001",
+            "message": "Starter not found for user",
+            "details": "",
+            "hint": ""
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 400,
+            data: data,
+            requestID: "req-2"
+        )
+        XCTAssertEqual(mapped.errorCode, "STARTER_NOT_FOUND")
+    }
+
+    func testPersistErrorMappingValidationFailed() throws {
+        let payload: [String: Any] = [
+            "code": "23514",
+            "message": "Confidence must be between 0 and 1",
+            "details": "",
+            "hint": ""
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 400,
+            data: data,
+            requestID: "req-3"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_VALIDATION_FAILED")
+    }
+
+    func testPersistErrorMappingConflict() throws {
+        let payload: [String: Any] = [
+            "code": "23505",
+            "message": "duplicate key value violates unique constraint",
+            "details": "",
+            "hint": ""
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 409,
+            data: data,
+            requestID: "req-4"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_CONFLICT")
+    }
+
+    func testPersistErrorMappingDatabaseError() {
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 500,
+            data: Data("{}".utf8),
+            requestID: "req-5"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_DATABASE_ERROR")
+    }
+
+    func testPersistErrorMappingResponseInvalidFallback() {
+        let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+            statusCode: 418,
+            data: Data("{}".utf8),
+            requestID: "req-6"
+        )
+        XCTAssertEqual(mapped.errorCode, "PERSIST_RESPONSE_INVALID")
+    }
+
     private func makeAnalyzeErrorBody(code: String, message: String) -> Data {
         let payload: [String: Any] = [
             "error_code": code,

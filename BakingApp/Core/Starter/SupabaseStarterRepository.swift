@@ -200,6 +200,7 @@ final class SupabaseStarterRepository: StarterRepository {
         response: StarterAIResponse
     ) async throws -> PersistedStarterAnalysisIDs {
         let authSession = try await client.auth.session
+        let requestID = UUID().uuidString.lowercased()
         let endpoint = supabaseURL
             .appendingPathComponent("rest")
             .appendingPathComponent("v1")
@@ -231,18 +232,38 @@ final class SupabaseStarterRepository: StarterRepository {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw mapRepositoryError(AppError.unknown("Invalid response"), operation: "save analysis")
+            throw mapRepositoryError(
+                PersistStarterAnalysisHTTPErrorMapper.mapInvalidResponse(requestID: requestID),
+                operation: "save analysis"
+            )
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            throw mapRepositoryError(AppError.analysisFailed, operation: "save analysis")
+            let mapped = PersistStarterAnalysisHTTPErrorMapper.map(
+                statusCode: httpResponse.statusCode,
+                data: data,
+                requestID: requestID
+            )
+            #if DEBUG
+            PersistStarterAnalysisHTTPErrorMapper.debugLog(
+                requestID: requestID,
+                statusCode: httpResponse.statusCode,
+                errorCode: mapped.errorCode
+            )
+            #endif
+            throw mapRepositoryError(mapped, operation: "save analysis")
         }
         do {
-            return try decode(PersistedStarterAnalysisIDs.self, from: data)
+            return try PersistStarterAnalysisResponseDecoder.decodeIDs(data)
         } catch {
-            if let decodedArray = try? decode([PersistedStarterAnalysisIDs].self, from: data), let first = decodedArray.first {
-                return first
-            }
-            throw mapRepositoryError(error, operation: "decode persisted analysis response")
+            let mapped = PersistStarterAnalysisHTTPErrorMapper.mapResponseInvalid(requestID: requestID)
+            #if DEBUG
+            PersistStarterAnalysisHTTPErrorMapper.debugLog(
+                requestID: requestID,
+                statusCode: httpResponse.statusCode,
+                errorCode: mapped.errorCode
+            )
+            #endif
+            throw mapRepositoryError(mapped, operation: "decode persisted analysis response")
         }
     }
 
@@ -552,6 +573,9 @@ enum RepositoryErrorMapper {
     static func map(_ error: Error, operation: String) -> AppError {
         debugLog(error, operation: operation)
 
+        if let persistError = error as? PersistStarterAnalysisSafeError {
+            return .unknown(persistError.message)
+        }
         if let appError = error as? AppError {
             return appError
         }
@@ -650,6 +674,110 @@ enum StarterAnalyzeHTTPErrorMapper {
 
     private static func decodeEnvelope(data: Data) -> StarterAnalyzeErrorEnvelope? {
         try? JSONDecoder().decode(StarterAnalyzeErrorEnvelope.self, from: data)
+    }
+}
+
+struct PersistStarterAnalysisSafeError: Error {
+    let errorCode: String
+    let message: String
+    let requestID: String
+}
+
+private struct PersistStarterAnalysisErrorEnvelope: Decodable {
+    let code: String?
+    let message: String
+    let details: String?
+}
+
+enum PersistStarterAnalysisHTTPErrorMapper {
+    static func map(statusCode: Int, data: Data, requestID: String) -> PersistStarterAnalysisSafeError {
+        let parsed = parseEnvelope(data)
+        let rawCode = parsed?.code?.lowercased() ?? ""
+        let combined = [
+            parsed?.message.lowercased() ?? "",
+            parsed?.details?.lowercased() ?? ""
+        ].joined(separator: " ")
+
+        if statusCode == 401 || statusCode == 403 {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "PERSIST_AUTH_FAILED",
+                message: "Your session is invalid. Please sign in again and retry saving.",
+                requestID: requestID
+            )
+        }
+        if combined.contains("starter not found") {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "STARTER_NOT_FOUND",
+                message: "Starter not found. Refresh your starters and try saving again.",
+                requestID: requestID
+            )
+        }
+        if rawCode == "23505" || statusCode == 409 {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "PERSIST_CONFLICT",
+                message: "This analysis was already saved.",
+                requestID: requestID
+            )
+        }
+        if ["23502", "23514", "22p02", "22023", "p0001"].contains(rawCode) ||
+            combined.contains("required") ||
+            combined.contains("invalid") ||
+            combined.contains("between 0 and 1") {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "PERSIST_VALIDATION_FAILED",
+                message: "The analysis could not be saved because some values were invalid. Please retry.",
+                requestID: requestID
+            )
+        }
+        if statusCode >= 500 {
+            return PersistStarterAnalysisSafeError(
+                errorCode: "PERSIST_DATABASE_ERROR",
+                message: "The server could not save your analysis. Please try again.",
+                requestID: requestID
+            )
+        }
+        return mapResponseInvalid(requestID: requestID)
+    }
+
+    static func mapInvalidResponse(requestID: String) -> PersistStarterAnalysisSafeError {
+        PersistStarterAnalysisSafeError(
+            errorCode: "PERSIST_RESPONSE_INVALID",
+            message: "We received an invalid response while saving. Please try again.",
+            requestID: requestID
+        )
+    }
+
+    static func mapResponseInvalid(requestID: String) -> PersistStarterAnalysisSafeError {
+        PersistStarterAnalysisSafeError(
+            errorCode: "PERSIST_RESPONSE_INVALID",
+            message: "We received an unexpected save response. Please try again.",
+            requestID: requestID
+        )
+    }
+
+    #if DEBUG
+    static func debugLog(requestID: String, statusCode: Int, errorCode: String) {
+        print("[StarterPersist] request_id=\(requestID) status=\(statusCode) error_code=\(errorCode)")
+    }
+    #endif
+
+    private static func parseEnvelope(_ data: Data) -> PersistStarterAnalysisErrorEnvelope? {
+        try? JSONDecoder().decode(PersistStarterAnalysisErrorEnvelope.self, from: data)
+    }
+}
+
+enum PersistStarterAnalysisResponseDecoder {
+    static func decodeIDs(_ data: Data) throws -> PersistedStarterAnalysisIDs {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let decoded = try? decoder.decode(PersistedStarterAnalysisIDs.self, from: data) {
+            return decoded
+        }
+        if let decoded = try? decoder.decode([PersistedStarterAnalysisIDs].self, from: data),
+           let first = decoded.first {
+            return first
+        }
+        throw AppError.malformedResponse
     }
 }
 

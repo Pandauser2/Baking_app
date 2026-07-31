@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Added BUG-010 and fixed starter-analysis save diagnostics + duplicate-save guard (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-009 and fixed non-starter subject handling with explicit invalid-subject contract (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added BUG-008 and implemented safe structured starter-analysis diagnostics with fixed error mapping (Fixed, not Verified). |
 | 2026-07-30 | 1.0 / 1 | Added and fixed BUG-007 stale starter-list active-state consistency issue after active starter creation (Fixed, not Verified). |
@@ -37,6 +38,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
+| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Fixed | Saving starter analysis fails |
 | BUG-009 | 2026-07-31 | Starter Workflow — Analysis Subject Validation | P1 | Fixed | Explicitly reject non-starter images |
 | BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
@@ -426,6 +428,49 @@ Non-starter photos (for example, waterfall images) could pass client-side qualit
 - Rejections do not persist scans, analyses, recommendations, or starter-state updates.
 - Valid starter analysis flow still persists normally.
 - Provider/network/schema failures continue using structured error codes.
+
+### BUG-010 — Saving starter analysis fails
+
+- **Date found:** 2026-07-31
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator, iOS 26.5, `BakingApp-QA`
+- **Area:** Starter Workflow — Persistence
+- **Priority:** P0
+- **Status:** Fixed
+
+#### Description
+
+After successful starter analysis, tapping `Save Analysis` could show the generic error "Analysis failed. Please try again." The failure path did not surface the actual persistence cause.
+
+#### Root cause
+
+- The iOS persistence path treated every non-2xx `persist_starter_analysis` response as a generic `.analysisFailed`.
+- Non-2xx RPC bodies were discarded, so actionable failure signals were lost.
+- Save taps were not guarded against repeat submission while a save was in flight.
+
+#### Fix implemented
+
+1. Added safe persistence error mapping for non-2xx RPC responses with six codes:
+   - `PERSIST_AUTH_FAILED`
+   - `STARTER_NOT_FOUND`
+   - `PERSIST_VALIDATION_FAILED`
+   - `PERSIST_CONFLICT`
+   - `PERSIST_DATABASE_ERROR`
+   - `PERSIST_RESPONSE_INVALID`
+2. Added DEBUG-only diagnostics for persistence failures containing only:
+   - `request_id` (client correlation ID)
+   - HTTP status
+   - safe `error_code`
+3. Added robust RPC response decoding for both object and array shapes.
+4. Added save-submission guardrails so repeated taps do not fire duplicate save requests from the app.
+5. Added real Supabase integration check script to verify successful persistence plus rollback behavior when validation fails.
+
+#### Acceptance criteria
+
+- Non-2xx persistence responses are decoded and mapped to safe actionable errors.
+- No SQL/raw backend internals are exposed to users.
+- Save action is not re-submitted while already saving or after save success.
+- Persistence remains atomic for successful writes and failed calls roll back.
 
 ## New Bug Template
 

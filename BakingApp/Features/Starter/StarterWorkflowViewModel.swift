@@ -253,6 +253,8 @@ final class StarterWorkflowViewModel: ObservableObject {
     }
 
     func savePendingAnalysis(starterID: UUID) async {
+        guard !isLoading else { return }
+        guard persistedIDs == nil else { return }
         guard
             let pendingAnalyzeResult,
             let pendingImagePath,
