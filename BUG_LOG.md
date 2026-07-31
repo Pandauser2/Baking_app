@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-07-31 | 1.0 / 1 | Verified BUG-010 with manual persistence/outcome evidence; added and fixed BUG-011 previous-scan comparison (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Fully resolved BUG-010 end-to-end: nested timeline decode + post-save refresh + idempotent persist RPC (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Reopened BUG-010 after post-fix manual run still failed to transition to saved state (status set back to Open). |
 | 2026-07-31 | 1.0 / 1 | Added BUG-010 and fixed starter-analysis save diagnostics + duplicate-save guard (Fixed, not Verified). |
@@ -40,7 +41,8 @@ Central source of truth for product bugs and manual QA findings.
 
 | Bug ID | Date Found | Area | Priority | Status | Title |
 | --- | --- | --- | --- | --- | --- |
-| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Fixed | Saving starter analysis fails |
+| BUG-011 | 2026-07-31 | Starter Workflow — Comparison | P1 | Fixed | Previous starter scan is ignored during comparison |
+| BUG-010 | 2026-07-31 | Starter Workflow — Persistence | P0 | Verified | Saving starter analysis fails |
 | BUG-009 | 2026-07-31 | Starter Workflow — Analysis Subject Validation | P1 | Fixed | Explicitly reject non-starter images |
 | BUG-008 | 2026-07-30 | Starter Workflow — Analysis | P0 | Fixed | Starter analysis fails in QA build |
 | BUG-007 | 2026-07-30 | Starter Workflow — UI Consistency | P1 | Fixed | Starter list temporarily shows multiple active starters |
@@ -438,7 +440,7 @@ Non-starter photos (for example, waterfall images) could pass client-side qualit
 - **Environment:** iPhone 17 Simulator, iOS 26.5, `BakingApp-QA`
 - **Area:** Starter Workflow — Persistence
 - **Priority:** P0
-- **Status:** Fixed
+- **Status:** Verified
 
 #### Description
 
@@ -460,12 +462,59 @@ After successful starter analysis, tapping `Save Analysis` could leave the app i
 5. Idempotent `persist_starter_analysis` by storage path plus unique index `scans_starter_user_path_unique`.
 6. Real-backend fixtures and E2E script proving RPC, row counts, restart reload, and decoder compatibility.
 
+#### Manual verification evidence (2026-07-31)
+
+- Save succeeded
+- Recommendation appeared
+- Outcome changed to Followed
+- App restarted
+- Timeline reloaded
+- Followed outcome persisted
+
 #### Acceptance criteria
 
 - Successful DB commit transitions UI to saved state with recommendation card.
 - Timeline decode failures after save do not present as save failures.
 - Duplicate save retries return the same IDs and create exactly one scan/analysis/recommendation per storage path.
 - Real linked-Supabase E2E passes with restart/reload proof.
+
+### BUG-011 — Previous starter scan is ignored during comparison
+
+- **Date found:** 2026-07-31
+- **Version / Build:** 1.0 / 1
+- **Environment:** iPhone 17 Simulator / linked Supabase `msyrqznbrndkjlwwhqeg`
+- **Area:** Starter Workflow — Comparison
+- **Priority:** P1 (Phase B release blocker)
+- **Status:** Fixed
+
+#### Description
+
+A later starter analysis showed “No previous data to compare.” even when an earlier saved scan existed for the same starter (e.g. prior scan 31 Jul 2026 5:31 PM, later analysis 6:14 PM).
+
+#### Root cause
+
+- `analyze-starter` dumped raw recent scans/analyses into the prompt without an explicit `previous_analysis` pointer.
+- Prompt wording asked for what “visibly changed” while only the current image was provided (no previous image).
+- There was no server-side validation preventing “no previous data” when valid prior completed analysis context existed.
+- This was not solely a model failure: the contract invited visual comparison without previous-image input.
+
+#### Fix implemented
+
+1. `loadHistoryContext` now builds sanitized context with `has_previous_analysis` + `previous_analysis` from the latest prior completed analyzed scan (excluding current image path; skipping missing nested analyses).
+2. Prompt v2 compares against prior recorded analysis/state text; forbids fabricating pixel-level visual differences without prior-image input.
+3. Deterministic `enforceComparisonConsistency` rejects/repairs “no previous data” when prior context exists, and forces the canonical no-previous message when none exists.
+4. Linked-Supabase E2E (`scripts/e2e/bug011_comparison_e2e.py`) saves A then B, proves B receives A context and meaningful comparison, and confirms both remain in timeline.
+5. Fixtures/tests cover zero/one/multiple priors, invalid-subject history, missing nested analysis, and Followed prior outcome.
+
+#### Acceptance criteria
+
+- No previous saved analysis → “No previous data to compare.”
+- Previous saved analysis exists → comparison references it.
+- Current in-progress image does not count as previous.
+- Multiple scans use latest prior completed scan.
+- Invalid-subject history does not participate.
+- Missing nested analysis skips to older completed scan without crash.
+- Comparison does not fabricate unsupported visual differences when only textual history is available.
 
 ## New Bug Template
 

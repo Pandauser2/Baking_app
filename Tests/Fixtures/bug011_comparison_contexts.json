@@ -1,0 +1,78 @@
+{
+  "zero_previous_scans": {
+    "has_previous_analysis": false,
+    "previous_analysis": null,
+    "feeding_logs": [],
+    "starter_state": null,
+    "recent_outcomes": []
+  },
+  "one_previous_scan": {
+    "has_previous_analysis": true,
+    "previous_analysis": {
+      "scan_id": "scan-a",
+      "created_at": "2026-07-31T16:31:00Z",
+      "starter_state": "active",
+      "confidence": 0.8,
+      "rendered_explanation": "Active starter with bubbles.",
+      "recommendation_outcome": null
+    },
+    "feeding_logs": [],
+    "starter_state": { "state_label": "active" },
+    "recent_outcomes": []
+  },
+  "multiple_previous_scans_latest_prior": {
+    "has_previous_analysis": true,
+    "previous_analysis": {
+      "scan_id": "scan-new",
+      "created_at": "2026-07-31T17:00:00Z",
+      "starter_state": "active",
+      "confidence": 0.9,
+      "rendered_explanation": "Newest prior",
+      "recommendation_outcome": null
+    },
+    "feeding_logs": [],
+    "starter_state": { "state_label": "active" },
+    "recent_outcomes": []
+  },
+  "invalid_subject_history_ignored": {
+    "has_previous_analysis": false,
+    "previous_analysis": null,
+    "feeding_logs": [],
+    "starter_state": null,
+    "recent_outcomes": []
+  },
+  "missing_nested_analysis_falls_back": {
+    "has_previous_analysis": true,
+    "previous_analysis": {
+      "scan_id": "scan-good",
+      "created_at": "2026-07-31T16:00:00Z",
+      "starter_state": "active",
+      "confidence": 0.75,
+      "rendered_explanation": "Recovered prior analysis",
+      "recommendation_outcome": null
+    },
+    "feeding_logs": [],
+    "starter_state": { "state_label": "active" },
+    "recent_outcomes": []
+  },
+  "prior_outcome_followed": {
+    "has_previous_analysis": true,
+    "previous_analysis": {
+      "scan_id": "scan-a",
+      "created_at": "2026-07-31T16:31:00Z",
+      "starter_state": "active",
+      "confidence": 0.8,
+      "rendered_explanation": "Active starter",
+      "recommendation_outcome": "followed"
+    },
+    "feeding_logs": [],
+    "starter_state": { "state_label": "active" },
+    "recent_outcomes": [
+      {
+        "recommendation": "Feed now",
+        "outcome": "followed",
+        "completed_at": "2026-07-31T17:00:00Z"
+      }
+    ]
+  }
+}

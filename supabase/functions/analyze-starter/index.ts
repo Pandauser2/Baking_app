@@ -1,11 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-const PROMPT_VERSION = "v1";
+const PROMPT_VERSION = "v2";
 const MAX_IMAGE_BYTES = 8_000_000;
 const MIN_IMAGE_BYTES = 8_000;
 const MIN_DIMENSION = 512;
 const OPENAI_TIMEOUT_MS = 20_000;
+const NO_PREVIOUS_COMPARISON_EXPLANATION = "No previous data to compare.";
 
 export type AnalyzeStarterRequest = {
   starter_id: string;
@@ -68,21 +69,28 @@ type OpenAIMessage = {
   content: string | Array<Record<string, unknown>>;
 };
 
-type LoadedContext = {
+export type SanitizedPreviousAnalysis = {
+  scan_id: string;
+  created_at: string;
+  starter_state: string | null;
+  confidence: number | null;
+  rendered_explanation: string | null;
+  recommendation_outcome: string | null;
+};
+
+export type LoadedContext = {
+  has_previous_analysis: boolean;
+  previous_analysis: SanitizedPreviousAnalysis | null;
   feeding_logs: unknown[];
-  recent_scans: unknown[];
-  recent_analyses: unknown[];
   starter_state: unknown | null;
-  unresolved_recommendations: unknown[];
   recent_outcomes: unknown[];
 };
 
 type ReadContextDependencies = {
   fetchFeedingLogs: (starterId: string) => Promise<unknown[]>;
-  fetchRecentScans: (starterId: string) => Promise<unknown[]>;
+  fetchRecentCompletedScans: (starterId: string, currentImagePath: string) => Promise<unknown[]>;
   fetchRecentAnalyses: (scanIds: string[]) => Promise<unknown[]>;
   fetchStarterState: (starterId: string) => Promise<unknown | null>;
-  fetchUnresolvedRecommendations: (scanIds: string[]) => Promise<unknown[]>;
   fetchRecentRecommendationOutcomes: (scanIds: string[]) => Promise<unknown[]>;
 };
 
@@ -434,36 +442,149 @@ export function validateAnalyzeStarterOutcome(payload: unknown): AnalyzeStarterO
   throw new Error("AI payload result_type is invalid");
 }
 
-export async function loadHistoryContext(starterId: string, deps: ReadContextDependencies): Promise<LoadedContext> {
+export function claimsNoPreviousData(explanation: string): boolean {
+  const normalized = explanation.trim().toLowerCase();
+  return (
+    normalized.includes("no previous data") ||
+    normalized.includes("no previous scan") ||
+    normalized.includes("nothing to compare") ||
+    normalized.includes("no prior")
+  );
+}
+
+export function enforceComparisonConsistency(
+  analysis: StarterAIResponse,
+  hasPrevious: boolean,
+): StarterAIResponse {
+  if (!hasPrevious) {
+    return {
+      ...analysis,
+      compare_to_previous: {
+        changed: false,
+        explanation: NO_PREVIOUS_COMPARISON_EXPLANATION,
+      },
+    };
+  }
+  if (claimsNoPreviousData(analysis.compare_to_previous.explanation)) {
+    throw new Error(
+      "compare_to_previous incorrectly claims no previous data when previous analysis exists",
+    );
+  }
+  return analysis;
+}
+
+export function sanitizeModelContext(context: LoadedContext): Record<string, unknown> {
+  return {
+    has_previous_analysis: context.has_previous_analysis,
+    previous_analysis: context.previous_analysis
+      ? {
+        scan_id: context.previous_analysis.scan_id,
+        created_at: context.previous_analysis.created_at,
+        starter_state: context.previous_analysis.starter_state,
+        confidence: context.previous_analysis.confidence,
+        rendered_explanation: context.previous_analysis.rendered_explanation,
+        recommendation_outcome: context.previous_analysis.recommendation_outcome,
+      }
+      : null,
+    feeding_logs: context.feeding_logs,
+    starter_state: context.starter_state,
+    recent_outcomes: context.recent_outcomes,
+  };
+}
+
+function extractStarterStateFromAnalysis(analysisJson: unknown): string | null {
+  if (!analysisJson || typeof analysisJson !== "object") return null;
+  const state = (analysisJson as Record<string, unknown>).starter_state;
+  return typeof state === "string" && state.trim().length > 0 ? state.trim() : null;
+}
+
+export async function loadHistoryContext(
+  starterId: string,
+  currentImagePath: string,
+  deps: ReadContextDependencies,
+): Promise<LoadedContext> {
   const feeding_logs = await deps.fetchFeedingLogs(starterId);
-  const recent_scans = await deps.fetchRecentScans(starterId);
-  const recentScanIds = recent_scans
+  const priorScans = await deps.fetchRecentCompletedScans(starterId, currentImagePath);
+  const priorScanIds = priorScans
     .map((row) => row as Record<string, unknown>)
     .map((row) => row.id)
     .filter((id): id is string => typeof id === "string");
-  const recent_analyses = recentScanIds.length ? await deps.fetchRecentAnalyses(recentScanIds) : [];
-  const starter_state = await deps.fetchStarterState(starterId);
-  const unresolved_recommendations = recentScanIds.length ? await deps.fetchUnresolvedRecommendations(recentScanIds) : [];
-  const recent_outcomes = recentScanIds.length ? await deps.fetchRecentRecommendationOutcomes(recentScanIds) : [];
+  const analyses = priorScanIds.length ? await deps.fetchRecentAnalyses(priorScanIds) : [];
+  const analysisByScan = new Map<string, Record<string, unknown>>();
+  for (const row of analyses) {
+    const record = row as Record<string, unknown>;
+    if (typeof record.scan_id === "string" && !analysisByScan.has(record.scan_id)) {
+      analysisByScan.set(record.scan_id, record);
+    }
+  }
 
+  let previous: SanitizedPreviousAnalysis | null = null;
+  for (const scan of priorScans) {
+    const scanRecord = scan as Record<string, unknown>;
+    const scanId = scanRecord.id;
+    if (typeof scanId !== "string") continue;
+    // Current in-progress image must never count as previous.
+    if (typeof scanRecord.storage_path === "string" && scanRecord.storage_path === currentImagePath) {
+      continue;
+    }
+    // Only completed analyzed scans participate; invalid-subject never creates scan rows.
+    if (scanRecord.status !== undefined && scanRecord.status !== "analyzed") {
+      continue;
+    }
+    const analysis = analysisByScan.get(scanId);
+    if (!analysis) {
+      // Missing nested analysis: skip this scan and try the next older completed scan.
+      continue;
+    }
+    previous = {
+      scan_id: scanId,
+      created_at: typeof scanRecord.created_at === "string"
+        ? scanRecord.created_at
+        : (typeof analysis.created_at === "string" ? analysis.created_at : ""),
+      starter_state: extractStarterStateFromAnalysis(analysis.analysis_json),
+      confidence: typeof analysis.confidence === "number" ? analysis.confidence : null,
+      rendered_explanation: typeof analysis.rendered_explanation === "string"
+        ? analysis.rendered_explanation
+        : null,
+      recommendation_outcome: null,
+    };
+    break;
+  }
+
+  const outcomeScanIds = previous ? [previous.scan_id] : [];
+  const recent_outcomes = outcomeScanIds.length
+    ? await deps.fetchRecentRecommendationOutcomes(outcomeScanIds)
+    : [];
+  if (previous && recent_outcomes.length > 0) {
+    const firstOutcome = recent_outcomes[0] as Record<string, unknown>;
+    if (typeof firstOutcome.outcome === "string") {
+      previous = {
+        ...previous,
+        recommendation_outcome: firstOutcome.outcome,
+      };
+    }
+  }
+
+  const starter_state = await deps.fetchStarterState(starterId);
   return {
+    has_previous_analysis: previous !== null,
+    previous_analysis: previous,
     feeding_logs,
-    recent_scans,
-    recent_analyses,
     starter_state,
-    unresolved_recommendations,
     recent_outcomes,
   };
 }
 
-function buildSystemPrompt(context: LoadedContext): string {
+export function buildSystemPrompt(context: LoadedContext): string {
+  const sanitized = sanitizeModelContext(context);
   return [
     "You are a cautious sourdough starter assistant.",
     "Return JSON only with strict schema and no extra fields.",
     "Do not claim hidden variables as facts.",
     "Separate observations from inference.",
-    "Use visible evidence from the image and context.",
-    `Context: ${JSON.stringify(context)}`,
+    "Use visible evidence from the current image plus the textual history context.",
+    "You are given only the current image. Do not invent pixel-level visual differences from a prior photo.",
+    `Context: ${JSON.stringify(sanitized)}`,
     "Schema option 1 (valid starter):",
     "{",
     '  "result_type":"starter_analysis",',
@@ -475,7 +596,7 @@ function buildSystemPrompt(context: LoadedContext): string {
     '    "next_steps":[{"instruction":"actionable recommendation","time_window_hours":12}],',
     '    "human_explanation":"concise explanation",',
     '    "risk_flags":[],',
-    '    "compare_to_previous":{"changed":true,"explanation":"what visibly changed"},',
+    '    "compare_to_previous":{"changed":true,"explanation":"how this differs from previous_analysis textual state"},',
     '    "starter_state":"active"',
     "  }",
     "}",
@@ -493,7 +614,20 @@ function buildSystemPrompt(context: LoadedContext): string {
     "- exactly 1 next_steps item",
     "- confidence between 0.0 and 1.0",
     "- actionable next step",
+    `- If has_previous_analysis is false, compare_to_previous MUST be {"changed":false,"explanation":"${NO_PREVIOUS_COMPARISON_EXPLANATION}"}`,
+    "- If has_previous_analysis is true, compare_to_previous MUST reference previous_analysis (state/explanation/outcome). Never claim there is no previous data.",
+    "- Comparison must use prior recorded analysis/state. Do not fabricate visual differences that are not supported by previous_analysis text or the current image.",
   ].join("\n");
+}
+
+export function emptyLoadedContext(): LoadedContext {
+  return {
+    has_previous_analysis: false,
+    previous_analysis: null,
+    feeding_logs: [],
+    starter_state: null,
+    recent_outcomes: [],
+  };
 }
 
 export async function callOpenAIWithRetry(
@@ -595,14 +729,27 @@ export async function callOpenAIWithRetry(
     }
   }
 
+  function finalizeOutcome(raw: string): AnalyzeStarterOutcome {
+    const outcome = validateAnalyzeStarterOutcome(JSON.parse(raw));
+    if (outcome.result_type !== "starter_analysis") return outcome;
+    return {
+      result_type: "starter_analysis",
+      analysis: enforceComparisonConsistency(
+        outcome.analysis,
+        context.has_previous_analysis,
+      ),
+    };
+  }
+
   try {
-    return validateAnalyzeStarterOutcome(JSON.parse(rawContent));
+    return finalizeOutcome(rawContent);
   } catch {
     try {
-      const repaired = await requestOpenAI(
-        "Your previous response was invalid JSON for the required schema. Return corrected JSON only with one allowed result_type variant.",
-      );
-      return validateAnalyzeStarterOutcome(JSON.parse(repaired));
+      const repairHint = context.has_previous_analysis
+        ? "Your previous response was invalid. Return corrected JSON only. Because has_previous_analysis is true, compare_to_previous must reference previous_analysis and must never say there is no previous data."
+        : `Your previous response was invalid. Return corrected JSON only. Because has_previous_analysis is false, compare_to_previous must be {"changed":false,"explanation":"${NO_PREVIOUS_COMPARISON_EXPLANATION}"}.`;
+      const repaired = await requestOpenAI(repairHint);
+      return finalizeOutcome(repaired);
     } catch {
       throw new AnalyzeStarterError(
         "PROVIDER_RESPONSE_INVALID",
@@ -681,7 +828,7 @@ const handler = async (req: Request) => {
       return errorResponse(400, "IMAGE_INVALID", "Image failed validation.", requestID);
     }
 
-    const context = await loadHistoryContext(body.starter_id, {
+    const context = await loadHistoryContext(body.starter_id, body.image_path, {
       fetchFeedingLogs: async (starterId) => {
         const { data } = await supabase
           .from("feeding_logs")
@@ -692,15 +839,17 @@ const handler = async (req: Request) => {
           .limit(3);
         return data ?? [];
       },
-      fetchRecentScans: async (starterId) => {
+      fetchRecentCompletedScans: async (starterId, currentImagePath) => {
         const { data } = await supabase
           .from("scans")
-          .select("id, created_at, quality_score, quality_issue, status")
+          .select("id, created_at, quality_score, quality_issue, status, storage_path")
           .eq("starter_id", starterId)
           .eq("user_id", userId)
           .eq("scan_type", "starter")
+          .eq("status", "analyzed")
+          .neq("storage_path", currentImagePath)
           .order("created_at", { ascending: false })
-          .limit(2);
+          .limit(5);
         return data ?? [];
       },
       fetchRecentAnalyses: async (scanIds) => {
@@ -720,16 +869,6 @@ const handler = async (req: Request) => {
           .eq("user_id", userId)
           .maybeSingle();
         return data ?? null;
-      },
-      fetchUnresolvedRecommendations: async (scanIds) => {
-        const { data } = await supabase
-          .from("recommendations")
-          .select("recommendation, due_at, outcome")
-          .in("scan_id", scanIds)
-          .eq("user_id", userId)
-          .eq("outcome", "unknown")
-          .order("created_at", { ascending: false });
-        return data ?? [];
       },
       fetchRecentRecommendationOutcomes: async (scanIds) => {
         const { data } = await supabase
