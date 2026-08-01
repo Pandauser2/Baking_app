@@ -153,7 +153,7 @@ struct HomeBackToolbarModifier: ViewModifier {
                                 .font(.body)
                         }
                         .foregroundStyle(Color.accentColor)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        .frame(minWidth: 48, minHeight: 48, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

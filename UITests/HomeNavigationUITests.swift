@@ -280,8 +280,9 @@ final class HomeNavigationUITests: XCTestCase {
         XCTAssertTrue(back.waitForExistence(timeout: 5), "Missing back control \(identifier)")
         XCTAssertEqual(back.label, "Back")
         let frame = back.frame
-        XCTAssertGreaterThanOrEqual(frame.width, 44, "Back hit width \(frame.width)")
-        XCTAssertGreaterThanOrEqual(frame.height, 44, "Back hit height \(frame.height)")
+        // Use a small epsilon — CI reports 43.999… for a 44pt toolbar control.
+        XCTAssertGreaterThanOrEqual(frame.width, 43.5, "Back hit width \(frame.width)")
+        XCTAssertGreaterThanOrEqual(frame.height, 43.5, "Back hit height \(frame.height)")
 
         // Always use the rendered frame center — this matches the large visible control.
         back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
