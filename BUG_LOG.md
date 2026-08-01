@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-08-01 | 1.0 / 1 | Fixed BUG-001 signup password validation and signup-specific errors; prepared `APPLE_DEVELOPMENT_TEAM` Archive wiring (no Team ID hardcoded). |
 | 2026-08-01 | 1.0 / 1 | Verified BUG-003 after product-owner manual QA on commit `9963081` (chevron visible, Timeline→Details back passed, CI green). |
 | 2026-08-01 | 1.0 / 1 | BUG-003 visual polish: chevron-only Back toolbar control (no clipped `Back` text). Navigation behavior manually passed; status remains Fixed pending PO screenshot verification. |
 | 2026-08-01 | 1.0 / 1 | Fully resolved BUG-003 with single HomeNavigationRouter, explicit Back control, real QA coordinate-tap proof (Fixed, not Verified). |
@@ -55,7 +56,7 @@ Central source of truth for product bugs and manual QA findings.
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
 | BUG-003 | 2026-07-26 | Navigation | P1 | Verified | Back navigation is visible but nonfunctional |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
-| BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Open | Weak signup password shows incorrect generic error |
+| BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Fixed | Weak signup password shows incorrect generic error |
 
 ## Detailed Bugs
 
@@ -66,7 +67,7 @@ Central source of truth for product bugs and manual QA findings.
 - **Environment:** iPhone 17 Simulator, iOS 26.5
 - **Area:** Authentication — Sign Up
 - **Priority:** P1
-- **Status:** Open
+- **Status:** Fixed
 
 #### Description
 
@@ -98,18 +99,18 @@ The wording is incorrect because the user is signing up, and it does not explain
 
 Use a stronger password with at least 8 characters.
 
-#### Proposed solution
+#### Root cause
 
-1. Add client-side minimum 8-character validation.
-2. Disable Create Account or show inline guidance until valid.
-3. Map safe Supabase errors:
-   - weak password
-   - invalid email
-   - signup disabled
-   - rate limit
-   - network failure
-4. On successful signup requiring verification, show: "Account created. Check your email to confirm your account."
-5. Add focused tests.
+- `AuthManager.signUp` forwarded every failure through `AppError.authenticationFailed` (sign-in wording).
+- No client-side minimum password length check before calling Supabase.
+
+#### Fix implemented
+
+1. Client-side minimum 8-character validation before any signup network call.
+2. Signup-mode UI guidance plus disabled Create Account until password is valid.
+3. Signup-specific error mapper with safe preservation of useful server messages.
+4. Sign-in path unchanged (`authenticationFailed` wording retained).
+5. Focused unit tests for empty/short/valid passwords, server signup failure, and separate sign-in errors.
 
 #### Acceptance criteria
 

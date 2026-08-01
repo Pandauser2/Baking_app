@@ -60,7 +60,8 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: BakingApp/Resources/Info.plist
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""
+        # Product owner: set APPLE_DEVELOPMENT_TEAM in Config.local.xcconfig (do not commit secrets).
+        DEVELOPMENT_TEAM: $(APPLE_DEVELOPMENT_TEAM)
     dependencies:
       - package: Supabase
         product: Supabase
@@ -110,6 +111,8 @@ schemes:
       targets:
         - BakingAppTests
         - BakingAppUITests
+    archive:
+      config: Release
   BakingApp-QA:
     build:
       targets:
@@ -126,4 +129,6 @@ schemes:
       targets:
         - BakingAppTests
         - BakingAppUITests
+    archive:
+      config: Release
 

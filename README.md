@@ -19,6 +19,7 @@ This repository contains:
    - `SUPABASE_ANON_KEY`
    - `REVENUECAT_PUBLIC_KEY`
    - `REVENUECAT_ENTITLEMENT_ID` (default: `pro`)
+   - `APPLE_DEVELOPMENT_TEAM` (10-character Apple Team ID; required for Archive / TestFlight)
 4. Copy `BakingApp/Resources/Config/GoogleService-Info.plist.example` to:
    - `BakingApp/Resources/Config/GoogleService-Info.plist`
 5. In Xcode, open `BakingApp.xcodeproj`.

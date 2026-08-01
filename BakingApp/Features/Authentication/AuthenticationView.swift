@@ -25,6 +25,11 @@ struct AuthenticationView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
                     SecureField("Password", text: $password)
+                    if mode == .signUp {
+                        Text(SignupPasswordRules.tooShortMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Mode") {
@@ -46,7 +51,7 @@ struct AuthenticationView: View {
                             Text(mode.actionTitle)
                         }
                     }
-                    .disabled(email.isEmpty || password.isEmpty || isSubmitting)
+                    .disabled(!canSubmit || isSubmitting)
                 }
 
                 if case .error(let message) = authManager.status {
@@ -58,6 +63,14 @@ struct AuthenticationView: View {
             }
             .navigationTitle("Welcome")
         }
+    }
+
+    private var canSubmit: Bool {
+        guard !email.isEmpty, !password.isEmpty else { return false }
+        if mode == .signUp {
+            return SignupPasswordRules.validationErrorMessage(for: password) == nil
+        }
+        return true
     }
 
     private func submit() async {

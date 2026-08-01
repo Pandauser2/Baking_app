@@ -22,17 +22,74 @@ final class AuthManagerTests: XCTestCase {
         XCTAssertEqual(manager.status, .signedOut)
     }
 
-    func testSignInFailureTransitionsToError() async {
+    func testSignUpEmptyPasswordShowsRequirementAndDoesNotCallClient() async {
+        let client = FakeAuthClient()
+        let manager = AuthManager(client: client)
+
+        await manager.signUp(email: "new@example.com", password: "")
+
+        if case .error(let message) = manager.status {
+            XCTAssertEqual(message, SignupPasswordRules.tooShortMessage)
+        } else {
+            XCTFail("Expected error status")
+        }
+        XCTAssertEqual(client.signUpCallCount, 0)
+    }
+
+    func testSignUpFiveCharacterPasswordShowsRequirementAndDoesNotCallClient() async {
+        let client = FakeAuthClient()
+        let manager = AuthManager(client: client)
+
+        await manager.signUp(email: "new@example.com", password: "12345")
+
+        if case .error(let message) = manager.status {
+            XCTAssertEqual(message, "Password must be at least 8 characters.")
+        } else {
+            XCTFail("Expected error status")
+        }
+        XCTAssertEqual(client.signUpCallCount, 0)
+    }
+
+    func testSignUpValidEightCharacterPasswordCallsClient() async {
+        let session = UserSession(userID: UUID(), email: "new@example.com")
+        let client = FakeAuthClient(signUpOutcome: .signedIn(session))
+        let manager = AuthManager(client: client)
+
+        await manager.signUp(email: "new@example.com", password: "password")
+
+        XCTAssertEqual(manager.status, .signedIn(session))
+        XCTAssertEqual(client.signUpCallCount, 1)
+        XCTAssertEqual(client.lastSignUpPassword, "password")
+    }
+
+    func testSignUpServerFailureUsesSignupSpecificWording() async {
+        let client = FakeAuthClient(signUpError: AppError.authenticationFailed)
+        let manager = AuthManager(client: client)
+
+        await manager.signUp(email: "new@example.com", password: "password123")
+
+        if case .error(let message) = manager.status {
+            XCTAssertEqual(message, SignupErrorMapper.genericFailureMessage)
+            XCTAssertFalse(message.lowercased().contains("sign you in"))
+        } else {
+            XCTFail("Expected error status")
+        }
+        XCTAssertEqual(client.signUpCallCount, 1)
+    }
+
+    func testSignInFailureKeepsSignInWording() async {
         let client = FakeAuthClient(signInError: AppError.authenticationFailed)
         let manager = AuthManager(client: client)
 
         await manager.signIn(email: "wrong@example.com", password: "bad")
 
-        if case .error = manager.status {
-            XCTAssertTrue(true)
+        if case .error(let message) = manager.status {
+            XCTAssertEqual(message, AppError.authenticationFailed.errorDescription)
+            XCTAssertTrue(message.contains("sign you in"))
         } else {
             XCTFail("Expected error status")
         }
+        XCTAssertEqual(client.signUpCallCount, 0)
     }
 
     func testSignUpEmailConfirmationRequiredShowsMessage() async {
@@ -43,6 +100,7 @@ final class AuthManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.status, .signedOut)
         XCTAssertEqual(manager.infoMessage, "Account created. Check your email to confirm your account.")
+        XCTAssertEqual(client.signUpCallCount, 1)
     }
 
     func testHandleAuthCallbackRejectsInvalidURL() async {
@@ -105,6 +163,8 @@ private final class FakeAuthClient: AuthClient {
     var callbackSession: UserSession = UserSession(userID: UUID(), email: "cb@example.com")
     private(set) var restoreCallCount = 0
     private(set) var handleCallbackCallCount = 0
+    private(set) var signUpCallCount = 0
+    private(set) var lastSignUpPassword: String?
 
     init(
         authCallbackURL: URL = URL(string: "bakingapp://auth-callback")!,
@@ -133,6 +193,8 @@ private final class FakeAuthClient: AuthClient {
     }
 
     func signUp(email: String, password: String) async throws -> SignUpOutcome {
+        signUpCallCount += 1
+        lastSignUpPassword = password
         if let signUpError { throw signUpError }
         return signUpOutcome
     }
@@ -152,4 +214,3 @@ private final class FakeAuthClient: AuthClient {
         if let signOutError { throw signOutError }
     }
 }
-

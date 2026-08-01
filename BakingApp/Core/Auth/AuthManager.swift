@@ -25,6 +25,11 @@ final class AuthManager: ObservableObject {
     }
 
     func signUp(email: String, password: String) async {
+        if let validationMessage = SignupPasswordRules.validationErrorMessage(for: password) {
+            status = .error(message: validationMessage)
+            return
+        }
+
         do {
             let outcome = try await client.signUp(email: email, password: password)
             switch outcome {
@@ -36,7 +41,7 @@ final class AuthManager: ObservableObject {
                 infoMessage = "Account created. Check your email to confirm your account."
             }
         } catch {
-            status = .error(message: AppError.authenticationFailed.errorDescription ?? "Authentication failed")
+            status = .error(message: SignupErrorMapper.message(for: error))
         }
     }
 
