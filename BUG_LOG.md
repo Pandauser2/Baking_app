@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-08-01 | 1.0 / 1 | Verified BUG-003 after product-owner manual QA on commit `9963081` (chevron visible, Timeline→Details back passed, CI green). |
 | 2026-08-01 | 1.0 / 1 | BUG-003 visual polish: chevron-only Back toolbar control (no clipped `Back` text). Navigation behavior manually passed; status remains Fixed pending PO screenshot verification. |
 | 2026-08-01 | 1.0 / 1 | Fully resolved BUG-003 with single HomeNavigationRouter, explicit Back control, real QA coordinate-tap proof (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Fixed BUG-003 visible-but-nonfunctional back navigation via single path-based Home NavigationStack (Fixed, not Verified). |
@@ -52,7 +53,7 @@ Central source of truth for product bugs and manual QA findings.
 | BUG-006 | 2026-07-26 | Home | P1 | Open | Home screen is internal developer scaffold |
 | BUG-005 | 2026-07-26 | Starter Workflow — Persistence | P0 | Verified | Starter and feeding inserts omit required user_id |
 | BUG-004 | 2026-07-26 | Authentication — Email Confirmation | P1 | Fixed | Email confirmation redirects to unavailable localhost URL |
-| BUG-003 | 2026-07-26 | Navigation | P1 | Fixed | Back navigation is visible but nonfunctional |
+| BUG-003 | 2026-07-26 | Navigation | P1 | Verified | Back navigation is visible but nonfunctional |
 | BUG-002 | 2026-07-25 | Monetization — Paywall | P1 | Open | Paywall traps user when subscriptions are unavailable |
 | BUG-001 | 2026-07-25 | Authentication — Sign Up | P1 | Open | Weak signup password shows incorrect generic error |
 
@@ -179,7 +180,7 @@ Swipe down on the sheet or relaunch the app.
 - **Environment:** BakingApp-QA, iPhone 17 Simulator, iOS 26.5
 - **Area:** Navigation
 - **Priority:** P1 (Phase B release blocker)
-- **Status:** Fixed
+- **Status:** Verified
 
 #### Description
 
@@ -201,7 +202,15 @@ Commit `f029b09` claimed a path-based fix and green UI tests, but BakingApp-QA s
 4. Edge-swipe also calls the same `router.pop()` (no competing owners).
 5. DEBUG navigation logs: screen/route/pathCount/backTap/resultingPathCount.
 6. Pre-fix + three-run post-fix screenshot fixtures; full Debug and BakingApp-QA UI tests.
-7. Visual polish: chevron-only toolbar control (`chevron.left`) so the label is never clipped as `B…` / `Bac`. Manual navigation behavior passed; status remains Fixed pending final product-owner screenshot verification.
+7. Visual polish: chevron-only toolbar control (`chevron.left`) so the label is never clipped as `B…` / `Bac`.
+
+#### Manual verification evidence (2026-08-01)
+
+- **Build/commit:** `996308175e4857725e39c0689b581326cd0472ad`
+- Timeline → Starter Details back navigation passed
+- Chevron was fully visible
+- No clipped `Back` text appeared
+- CI green: https://github.com/Pandauser2/Baking_app/actions/runs/30700232305
 
 #### Acceptance criteria
 
