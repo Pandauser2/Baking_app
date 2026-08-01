@@ -1,9 +1,6 @@
 import Foundation
-import SwiftUI
 
-/// Typed routes owned by the single Home `NavigationStack`.
-/// Using one path avoids hybrid `isPresented` + nested `NavigationLink` stacks
-/// that can show a back chevron while ignoring taps.
+/// Typed routes owned by the single Home `NavigationStack` / `HomeNavigationRouter`.
 enum HomeNavigationRoute: Hashable {
     case starterList
     case starterDetail(UUID)
@@ -27,15 +24,13 @@ enum HomeNavigationAccessibilityID {
     static let feedingLogRoot = "starter.feedingLog.root"
     static let scanRoot = "starter.scan.root"
     static let analysisResultRoot = "starter.analysisResult.root"
-}
+    static let starterListRoot = "starter.list.root"
 
-private struct HomeNavigationPathKey: EnvironmentKey {
-    static let defaultValue: Binding<NavigationPath>? = nil
-}
-
-extension EnvironmentValues {
-    var homeNavigationPath: Binding<NavigationPath>? {
-        get { self[HomeNavigationPathKey.self] }
-        set { self[HomeNavigationPathKey.self] = newValue }
-    }
+    static let backStarterDetail = "nav.back.starterDetail"
+    static let backTimeline = "nav.back.timeline"
+    static let backFeedingHistory = "nav.back.feedingHistory"
+    static let backFeedingLog = "nav.back.feedingLog"
+    static let backScan = "nav.back.scan"
+    static let backAnalysisResult = "nav.back.analysisResult"
+    static let backStarterList = "nav.back.starterList"
 }

@@ -23,7 +23,7 @@ final class StarterWorkflowViewModel: ObservableObject {
     private let repository: StarterRepository
     private let analytics: AnalyticsTracking
     private let imageValidator: StarterImageValidator
-    private let isProUser: Bool
+    private var isProUser: Bool
 
     private var didTrackFirstUpload = false
     private var didTrackFirstRecommendationView = false
@@ -41,6 +41,35 @@ final class StarterWorkflowViewModel: ObservableObject {
         self.analytics = analytics
         self.imageValidator = imageValidator
         self.isProUser = isProUser
+    }
+
+    func updateProStatus(_ isPro: Bool) {
+        isProUser = isPro
+    }
+
+    /// UI-testing only: seed a pending analysis so Analysis Result back can be proven.
+    func seedPendingAnalysisForUITesting() {
+        guard UITestingBootstrap.isEnabled else { return }
+        pendingAIResponse = StarterAIResponse(
+            scanType: "starter",
+            observations: ["UITest bubbles"],
+            diagnosis: ["active"],
+            confidence: 0.9,
+            nextSteps: [StarterAIResponse.NextStep(instruction: "Feed now", timeWindowHours: 12)],
+            humanExplanation: "UITest analysis",
+            riskFlags: [],
+            compareToPrevious: StarterAIResponse.CompareToPrevious(
+                changed: false,
+                explanation: "No previous data to compare."
+            ),
+            starterState: "active"
+        )
+        pendingAnalyzeResult = StarterAnalyzeResult(
+            model: "uitest",
+            promptVersion: "v2",
+            outcome: .starterAnalysis(pendingAIResponse!)
+        )
+        errorMessage = nil
     }
 
     var activeStarter: Starter? {

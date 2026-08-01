@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FeedingLogCreateView: View {
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var router: HomeNavigationRouter
     let starter: Starter
     @ObservedObject var viewModel: StarterWorkflowViewModel
 
@@ -44,7 +44,7 @@ struct FeedingLogCreateView: View {
                         starterG: Int(starterAmount),
                         notes: notes.isEmpty ? nil : notes
                     )
-                    if ok { dismiss() }
+                    if ok { router.pop(screen: "LogFeeding") }
                 }
             }
             .buttonStyle(.borderedProminent)

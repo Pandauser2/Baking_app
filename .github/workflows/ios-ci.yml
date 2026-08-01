@@ -151,10 +151,14 @@ jobs:
             -project BakingApp.xcodeproj \
             -scheme BakingApp-QA \
             -destination "$DESTINATION" \
-            -only-testing:BakingAppUITests/HomeNavigationUITests/testHomeDetailsTimelineBackToHome \
-            -only-testing:BakingAppUITests/HomeNavigationUITests/testSwipeBackFromTimeline \
+            -only-testing:BakingAppUITests/HomeNavigationUITests \
             CODE_SIGNING_ALLOWED=NO \
             test | tee build/logs/xcodebuild-uitest-qa.log
+
+      - name: Verify BUG-003 pre-fix evidence artifact
+        run: |
+          set -euo pipefail
+          python3 scripts/e2e/bug003_reproduce_native_back.py
 
       - name: Run Edge Function tests
         run: |

@@ -4,13 +4,14 @@ import SwiftUI
 struct StarterScanView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var billingManager: BillingManager
-    @Environment(\.homeNavigationPath) private var homeNavigationPath
+    @EnvironmentObject private var router: HomeNavigationRouter
 
     let starter: Starter
     @ObservedObject var viewModel: StarterWorkflowViewModel
 
     @State private var showCamera = false
     @State private var showPaywall = false
+    @State private var didSeedAnalysisResult = false
 
     var body: some View {
         ScrollView {
@@ -61,9 +62,7 @@ struct StarterScanView: View {
                     Task {
                         await viewModel.analyzeStarter(starterID: starter.id, userID: session.userID)
                         if viewModel.pendingAIResponse != nil {
-                            homeNavigationPath?.wrappedValue.append(
-                                HomeNavigationRoute.analysisResult(starter.id)
-                            )
+                            router.push(.analysisResult(starter.id), screen: "ScanStarter")
                         }
                     }
                 }
@@ -86,6 +85,13 @@ struct StarterScanView: View {
         .accessibilityIdentifier(HomeNavigationAccessibilityID.scanRoot)
         .task(id: viewModel.selectedItem) {
             await viewModel.handleSelectedPhoto()
+        }
+        .task {
+            guard UITestingBootstrap.shouldSeedAnalysisResult else { return }
+            guard !didSeedAnalysisResult else { return }
+            didSeedAnalysisResult = true
+            viewModel.seedPendingAnalysisForUITesting()
+            router.push(.analysisResult(starter.id), screen: "ScanStarter")
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker { image in

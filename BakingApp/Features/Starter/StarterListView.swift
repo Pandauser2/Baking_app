@@ -3,6 +3,7 @@ import SwiftUI
 struct StarterListView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var billingManager: BillingManager
+    @EnvironmentObject private var router: HomeNavigationRouter
 
     @ObservedObject var viewModel: StarterWorkflowViewModel
     @State private var showCreate = false
@@ -15,15 +16,19 @@ struct StarterListView: View {
         List {
             if let activeStarter = viewModel.activeStarter {
                 Section("Active Starter") {
-                    NavigationLink(activeStarter.name, value: HomeNavigationRoute.starterDetail(activeStarter.id))
-                        .font(.headline)
+                    Button(activeStarter.name) {
+                        router.push(.starterDetail(activeStarter.id), screen: "StarterList")
+                    }
+                    .font(.headline)
                 }
             }
 
             Section("All Starters") {
                 ForEach(viewModel.starters) { starter in
                     HStack {
-                        NavigationLink(starter.name, value: HomeNavigationRoute.starterDetail(starter.id))
+                        Button(starter.name) {
+                            router.push(.starterDetail(starter.id), screen: "StarterList")
+                        }
                         Spacer()
                         if starter.active {
                             Text("Active")
@@ -68,4 +73,3 @@ struct StarterListView: View {
         }
     }
 }
-

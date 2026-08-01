@@ -28,6 +28,11 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var onboardingStore: OnboardingStore
+    @EnvironmentObject private var billingManager: BillingManager
+
+    /// Stable owners — must not be recreated when auth/billing republish.
+    @StateObject private var homeRouter = HomeNavigationRouter()
+    @StateObject private var homeViewModelHolder = HomeViewModelHolder()
 
     var body: some View {
         let route = AppRouter.route(for: authManager.status, onboardingCompleted: onboardingStore.isCompleted)
@@ -44,13 +49,7 @@ struct RootView: View {
                     onboardingStore.complete()
                 }
             case .home:
-                HomeView(
-                    viewModel: StarterWorkflowViewModel(
-                        repository: environment.starterRepository,
-                        analytics: environment.analytics,
-                        isProUser: environment.billingManager.hasProEntitlement
-                    )
-                )
+                homeContent
             }
         }
         .alert("Authentication", isPresented: Binding(
@@ -63,6 +62,51 @@ struct RootView: View {
         } message: {
             Text(authManager.infoMessage ?? "")
         }
+        .onChange(of: billingManager.hasProEntitlement) { isPro in
+            homeViewModelHolder.updateProStatus(isPro)
+        }
+        .onChange(of: authManager.status) { status in
+            if case .signedOut = status {
+                homeRouter.popToRoot(screen: "signOut")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var homeContent: some View {
+        let viewModel = homeViewModelHolder.viewModel(
+            repository: environment.starterRepository,
+            analytics: environment.analytics,
+            isProUser: billingManager.hasProEntitlement
+        )
+        HomeView(viewModel: viewModel)
+            .environmentObject(homeRouter)
     }
 }
 
+/// Keeps a single `StarterWorkflowViewModel` alive across RootView refreshes.
+@MainActor
+final class HomeViewModelHolder: ObservableObject {
+    private var viewModel: StarterWorkflowViewModel?
+
+    func viewModel(
+        repository: StarterRepository,
+        analytics: AnalyticsTracking,
+        isProUser: Bool
+    ) -> StarterWorkflowViewModel {
+        if let viewModel {
+            return viewModel
+        }
+        let created = StarterWorkflowViewModel(
+            repository: repository,
+            analytics: analytics,
+            isProUser: isProUser
+        )
+        viewModel = created
+        return created
+    }
+
+    func updateProStatus(_ isPro: Bool) {
+        viewModel?.updateProStatus(isPro)
+    }
+}

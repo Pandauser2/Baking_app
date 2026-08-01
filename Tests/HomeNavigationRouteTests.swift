@@ -1,45 +1,62 @@
-import SwiftUI
 import XCTest
 @testable import BakingApp
 
+@MainActor
 final class HomeNavigationRouteTests: XCTestCase {
-    func testRouteHashStabilityForSameStarter() {
-        let id = UITestingBootstrap.starterID
-        XCTAssertEqual(
-            HomeNavigationRoute.timeline(id),
-            HomeNavigationRoute.timeline(id)
-        )
-        XCTAssertNotEqual(
-            HomeNavigationRoute.timeline(id),
-            HomeNavigationRoute.starterDetail(id)
-        )
-    }
-
-    func testNavigationPathAppendAndPopPreservesOrder() {
-        var path = NavigationPath()
+    func testRouterPushPopRemovesExactlyOneRoute() {
+        let router = HomeNavigationRouter()
         let starterID = UITestingBootstrap.starterID
-        path.append(HomeNavigationRoute.starterDetail(starterID))
-        path.append(HomeNavigationRoute.timeline(starterID))
-        XCTAssertEqual(path.count, 2)
 
-        path.removeLast()
-        XCTAssertEqual(path.count, 1)
+        router.push(.starterDetail(starterID), screen: "test")
+        router.push(.timeline(starterID), screen: "test")
+        XCTAssertEqual(router.pathCount, 2)
+        XCTAssertEqual(router.topRoute, .timeline(starterID))
 
-        path.append(HomeNavigationRoute.feedingHistory(starterID))
-        path.append(HomeNavigationRoute.scanStarter(starterID))
-        path.append(HomeNavigationRoute.analysisResult(starterID))
-        XCTAssertEqual(path.count, 4)
+        router.pop(screen: "Timeline")
+        XCTAssertEqual(router.pathCount, 1)
+        XCTAssertEqual(router.topRoute, .starterDetail(starterID))
 
-        path.removeLast(3)
-        XCTAssertEqual(path.count, 1)
-        path.removeLast()
-        XCTAssertEqual(path.count, 0)
+        router.pop(screen: "StarterDetail")
+        XCTAssertEqual(router.pathCount, 0)
+        XCTAssertFalse(router.canPop)
     }
 
-    func testUITestingBootstrapExposesFixtureStarter() {
-        let starter = UITestingBootstrap.makeStarter()
-        XCTAssertEqual(starter.id, UITestingBootstrap.starterID)
-        XCTAssertTrue(starter.active)
-        XCTAssertEqual(UITestingBootstrap.makeTimelineItem().recommendation?.outcome, "followed")
+    func testRouterIgnoresDuplicateTopPush() {
+        let router = HomeNavigationRouter()
+        let starterID = UITestingBootstrap.starterID
+        router.push(.timeline(starterID), screen: "test")
+        router.push(.timeline(starterID), screen: "test")
+        XCTAssertEqual(router.pathCount, 1)
+    }
+
+    func testRouterPopOnEmptyIsNoOp() {
+        let router = HomeNavigationRouter()
+        router.pop(screen: "Home")
+        XCTAssertEqual(router.pathCount, 0)
+    }
+
+    func testPathBindingSwipePopSyncsRouter() {
+        let router = HomeNavigationRouter()
+        let starterID = UITestingBootstrap.starterID
+        router.push(.starterDetail(starterID), screen: "test")
+        router.push(.timeline(starterID), screen: "test")
+
+        router.pathBinding.wrappedValue = [.starterDetail(starterID)]
+        XCTAssertEqual(router.pathCount, 1)
+        XCTAssertEqual(router.topRoute, .starterDetail(starterID))
+    }
+
+    func testWorkflowRouteCoverage() {
+        let id = UITestingBootstrap.starterID
+        let routes: [HomeNavigationRoute] = [
+            .starterList,
+            .starterDetail(id),
+            .feedingLog(id),
+            .feedingHistory(id),
+            .scanStarter(id),
+            .analysisResult(id),
+            .timeline(id),
+        ]
+        XCTAssertEqual(Set(routes).count, routes.count)
     }
 }

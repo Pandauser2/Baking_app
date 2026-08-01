@@ -1,0 +1,23 @@
+[
+  {
+    "before" : "three_run_1_before.png",
+    "run" : 1,
+    "after" : "three_run_1_after.png",
+    "landed_on" : "starter.detail.root",
+    "outcome_preserved" : true
+  },
+  {
+    "after" : "three_run_2_after.png",
+    "before" : "three_run_2_before.png",
+    "landed_on" : "starter.detail.root",
+    "run" : 2,
+    "outcome_preserved" : true
+  },
+  {
+    "outcome_preserved" : true,
+    "before" : "three_run_3_before.png",
+    "after" : "three_run_3_after.png",
+    "landed_on" : "starter.detail.root",
+    "run" : 3
+  }
+]

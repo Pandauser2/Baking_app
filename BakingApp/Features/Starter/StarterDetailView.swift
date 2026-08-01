@@ -4,6 +4,7 @@ struct StarterDetailView: View {
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var billingManager: BillingManager
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var router: HomeNavigationRouter
 
     let starter: Starter
     @ObservedObject var viewModel: StarterWorkflowViewModel
@@ -33,14 +34,25 @@ struct StarterDetailView: View {
             }
 
             Section("Workflow") {
-                NavigationLink("Log Feeding", value: HomeNavigationRoute.feedingLog(starter.id))
-                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowLogFeeding)
-                NavigationLink("Feeding History", value: HomeNavigationRoute.feedingHistory(starter.id))
-                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowFeedingHistory)
-                NavigationLink("Scan Starter", value: HomeNavigationRoute.scanStarter(starter.id))
-                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowScanStarter)
-                NavigationLink("Timeline", value: HomeNavigationRoute.timeline(starter.id))
-                    .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowTimeline)
+                Button("Log Feeding") {
+                    router.push(.feedingLog(starter.id), screen: "StarterDetail")
+                }
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowLogFeeding)
+
+                Button("Feeding History") {
+                    router.push(.feedingHistory(starter.id), screen: "StarterDetail")
+                }
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowFeedingHistory)
+
+                Button("Scan Starter") {
+                    router.push(.scanStarter(starter.id), screen: "StarterDetail")
+                }
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowScanStarter)
+
+                Button("Timeline") {
+                    router.push(.timeline(starter.id), screen: "StarterDetail")
+                }
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.workflowTimeline)
             }
 
             Section("Phase C") {

@@ -3,6 +3,7 @@ import Foundation
 enum UITestingBootstrap {
     static let argument = "-uiTesting"
     static let populatedTimelineArgument = "-uiTestingTimelinePopulated"
+    static let seedAnalysisResultArgument = "-uiTestingSeedAnalysisResult"
 
     static var isEnabled: Bool {
         ProcessInfo.processInfo.arguments.contains(argument)
@@ -10,6 +11,10 @@ enum UITestingBootstrap {
 
     static var usesPopulatedTimeline: Bool {
         ProcessInfo.processInfo.arguments.contains(populatedTimelineArgument)
+    }
+
+    static var shouldSeedAnalysisResult: Bool {
+        ProcessInfo.processInfo.arguments.contains(seedAnalysisResultArgument)
     }
 
     static let userID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!

@@ -1,0 +1,15 @@
+{
+  "still_on_timeline_after_coordinate_tap" : true,
+  "commit" : "f029b09",
+  "on_starter_details_after_coordinate_tap" : false,
+  "tap_normalized" : {
+    "dy" : 0.5,
+    "dx" : 0.10945273631840796
+  },
+  "native_back_failed" : true,
+  "suspected_causes" : [
+    "RootView recreates HomeView(viewModel:) on every auth\/billing refresh",
+    "Opaque NavigationPath desyncs from visible UIKit back chevron",
+    "Prior UITests used accessibility BackButton activate, not visible coordinate tap"
+  ]
+}

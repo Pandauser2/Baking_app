@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-08-01 | 1.0 / 1 | Fully resolved BUG-003 with single HomeNavigationRouter, explicit Back control, real QA coordinate-tap proof (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Fixed BUG-003 visible-but-nonfunctional back navigation via single path-based Home NavigationStack (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Verified BUG-010 with manual persistence/outcome evidence; added and fixed BUG-011 previous-scan comparison (Fixed after real linked-Supabase E2E). |
 | 2026-07-31 | 1.0 / 1 | Fully resolved BUG-010 end-to-end: nested timeline decode + post-save refresh + idempotent persist RPC (Fixed after real linked-Supabase E2E). |
@@ -181,27 +182,32 @@ Swipe down on the sheet or relaunch the app.
 
 #### Description
 
-Back navigation can appear in the navigation bar but does not pop the stack. Exact Phase B reproduction: Home → Open starter details → Timeline → tap visible back button → nothing happens. Expected: Timeline pops back to Starter Details immediately. Broader symptom previously logged: some screens lacked clear return controls; this update centers on visible-but-nonfunctional native back navigation.
+Back navigation can appear in the navigation bar but does not pop the stack. Exact Phase B reproduction: Home → Open starter details → Timeline → tap visible back button → nothing happens. Expected: Timeline pops back to Starter Details immediately.
+
+Commit `f029b09` claimed a path-based fix and green UI tests, but BakingApp-QA still failed the exact Timeline back tap (native chevron coordinate tap left Timeline visible; evidence in `Tests/Fixtures/bug003_pre_fix/`).
 
 #### Root cause
 
-Home owned multiple `navigationDestination(isPresented:)` pushes, while Starter Details pushed Timeline/Scan/History via classic nested `NavigationLink(destination:)` views. That hybrid stack left a visible system back chevron whose tap did not reliably pop the path.
+1. `RootView` recreated `HomeView(viewModel: StarterWorkflowViewModel(...))` on every auth/billing refresh, destabilizing navigation ownership.
+2. Opaque `NavigationPath` + native UIKit back chevron desynced on iOS 26 — visible back received taps but did not pop.
+3. Prior UITests used accessibility `BackButton` activate, not the large visible coordinate hit target humans tap (false confidence).
 
 #### Fix implemented
 
-1. Single Home `NavigationStack(path:)` owning typed `HomeNavigationRoute` values.
-2. Replaced hybrid `isPresented` + destination-builder links with `NavigationLink(value:)` / path appends.
-3. Analysis Result appends onto the same Home path (no nested `isPresented` destination).
-4. Modal create-starter sheet keeps its own `NavigationStack` (correct for sheets).
-5. Accessibility identifiers + UI tests for Home → Details → Timeline → Back → Details → Back → Home, plus restart, empty/populated timeline, double-tap, swipe-back, Debug and QA schemes.
+1. Single stable `HomeNavigationRouter` + one Home `NavigationStack(path:)` owned from `RootView` (`HomeViewModelHolder` prevents ViewModel churn).
+2. All pushes/pops go through router; duplicate top pushes ignored.
+3. Native system back hidden; one explicit toolbar Back (≥44×44, label `Back`, per-screen accessibility id) calling `router.pop()`.
+4. Edge-swipe also calls the same `router.pop()` (no competing owners).
+5. DEBUG navigation logs: screen/route/pathCount/backTap/resultingPathCount.
+6. Pre-fix + three-run post-fix screenshot fixtures; full Debug and BakingApp-QA UI tests.
 
 #### Acceptance criteria
 
-- Timeline → Starter Details back works by button tap.
-- Edge-swipe back works where supported.
-- Starter Details → Home, Feeding History, Log Feeding, Scan Starter, and Analysis Result back paths work.
-- No blank screen or lost navigation state.
-- Native back control remains VoiceOver-labelled with adequate hit target.
+- Timeline → Starter Details back works by button tap (coordinate proof).
+- Edge-swipe back works via the same router pop.
+- Starter Details → Home, Feeding History, Log Feeding, Scan Starter, Analysis Result, and Starter List back paths work.
+- No blank screen, lost navigation state, or duplicate routes.
+- Single Home navigation owner; no competing back mechanisms.
 - Timeline/recommendation data remain intact after navigating back/forward.
 - Paywall handling remains tracked separately as `BUG-002`.
 - Tests and CI pass.
