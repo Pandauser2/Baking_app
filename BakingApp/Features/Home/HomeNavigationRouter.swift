@@ -145,16 +145,11 @@ struct HomeBackToolbarModifier: ViewModifier {
                     Button {
                         router.pop(screen: screen)
                     } label: {
-                        // Explicit ≥44×44 hit box matching the large visible control users tap.
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.backward")
-                                .font(.body.weight(.semibold))
-                            Text("Back")
-                                .font(.body)
-                        }
-                        .foregroundStyle(Color.accentColor)
-                        .frame(minWidth: 48, minHeight: 48, alignment: .leading)
-                        .contentShape(Rectangle())
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(!router.canPop)

@@ -22,6 +22,7 @@ Central source of truth for product bugs and manual QA findings.
 
 | Date | Version | Changes |
 | --- | --- | --- |
+| 2026-08-01 | 1.0 / 1 | BUG-003 visual polish: chevron-only Back toolbar control (no clipped `Back` text). Navigation behavior manually passed; status remains Fixed pending PO screenshot verification. |
 | 2026-08-01 | 1.0 / 1 | Fully resolved BUG-003 with single HomeNavigationRouter, explicit Back control, real QA coordinate-tap proof (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Fixed BUG-003 visible-but-nonfunctional back navigation via single path-based Home NavigationStack (Fixed, not Verified). |
 | 2026-07-31 | 1.0 / 1 | Verified BUG-010 with manual persistence/outcome evidence; added and fixed BUG-011 previous-scan comparison (Fixed after real linked-Supabase E2E). |
@@ -196,10 +197,11 @@ Commit `f029b09` claimed a path-based fix and green UI tests, but BakingApp-QA s
 
 1. Single stable `HomeNavigationRouter` + one Home `NavigationStack(path:)` owned from `RootView` (`HomeViewModelHolder` prevents ViewModel churn).
 2. All pushes/pops go through router; duplicate top pushes ignored.
-3. Native system back hidden; one explicit toolbar Back (≥44×44, label `Back`, per-screen accessibility id) calling `router.pop()`.
+3. Native system back hidden; one explicit toolbar Back control (≥44×44, accessibility label `Back`, per-screen accessibility id) calling `router.pop()`.
 4. Edge-swipe also calls the same `router.pop()` (no competing owners).
 5. DEBUG navigation logs: screen/route/pathCount/backTap/resultingPathCount.
 6. Pre-fix + three-run post-fix screenshot fixtures; full Debug and BakingApp-QA UI tests.
+7. Visual polish: chevron-only toolbar control (`chevron.left`) so the label is never clipped as `B…` / `Bac`. Manual navigation behavior passed; status remains Fixed pending final product-owner screenshot verification.
 
 #### Acceptance criteria
 
