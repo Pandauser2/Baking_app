@@ -126,19 +126,22 @@ struct BakeCreateView: View {
                         .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeCreateError)
                 }
             }
-
-            Section {
+        }
+        .navigationTitle("Create Bake")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Save Bake") {
                     Task { await save() }
                 }
                 .disabled(viewModel.isSaving || viewModel.starters.isEmpty)
                 .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeCreateSave)
-                if viewModel.isSaving {
-                    ProgressView()
-                }
             }
         }
-        .navigationTitle("Create Bake")
+        .overlay {
+            if viewModel.isSaving {
+                ProgressView()
+            }
+        }
         .task {
             await viewModel.loadStartersIfNeeded()
             if selectedStarterID == nil {

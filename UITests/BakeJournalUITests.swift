@@ -31,10 +31,13 @@ final class BakeJournalUITests: XCTestCase {
         nameField.tap()
         nameField.typeText("UITest Country Loaf")
 
-        // Form content can sit below the fold; scroll before asserting Save.
-        app.swipeUp()
-        app.swipeUp()
-        let save = app.descendants(matching: .any)["bake.create.save"]
+        // Dismiss keyboard so toolbar Save remains hittable.
+        if app.keyboards.element.exists {
+            app.keyboards.buttons["return"].tap()
+        }
+        app.tap()
+
+        let save = app.buttons["bake.create.save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5), "Save bake control missing")
         save.tap()
 
