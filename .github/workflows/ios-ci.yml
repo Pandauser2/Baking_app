@@ -170,6 +170,7 @@ jobs:
           deno test --allow-read supabase/migrations/0006_phase_b_starter_persist_idempotency_test.ts
           deno test --allow-read supabase/migrations/0007_phase_b_starter_persist_idempotency_enforcement_test.ts
           deno test --allow-read supabase/migrations/0008_phase_b_persist_idempotent_rpc_test.ts
+          deno test --allow-read supabase/migrations/0009_phase_c_bakes_test.ts
 
       - name: Upload build/test logs and E2E artifacts
         if: always()

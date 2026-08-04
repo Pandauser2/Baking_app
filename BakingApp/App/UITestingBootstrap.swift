@@ -220,3 +220,55 @@ struct UITestingStarterRepository: StarterRepository {
         URL(string: "https://example.com/\(path)")!
     }
 }
+
+final class UITestingBakeRepository: BakeRepository {
+    private let starterRepository: StarterRepository
+    private var bakes: [Bake] = []
+
+    init(starterRepository: StarterRepository) {
+        self.starterRepository = starterRepository
+    }
+
+    func listBakes() async throws -> [Bake] {
+        bakes.sorted { $0.bakedAt > $1.bakedAt }
+    }
+
+    func fetchBake(bakeID: UUID) async throws -> Bake {
+        guard let bake = bakes.first(where: { $0.id == bakeID }) else {
+            throw AppError.unknown("Bake not found")
+        }
+        return bake
+    }
+
+    func createBake(_ input: BakeCreateInput) async throws -> Bake {
+        let validated = try BakeValidation.validate(input)
+        _ = try await starterRepository.fetchStarter(starterID: validated.starterID)
+        let now = Date()
+        let bake = Bake(
+            id: UUID(),
+            userID: UITestingBootstrap.userID,
+            starterID: validated.starterID,
+            bakedAt: validated.bakedAt,
+            name: validated.name,
+            doughHydrationPercent: validated.doughHydrationPercent,
+            bulkFermentationMinutes: validated.bulkFermentationMinutes,
+            finalProofMinutes: validated.finalProofMinutes,
+            mixingMethod: validated.mixingMethod,
+            shapingMethod: validated.shapingMethod,
+            ovenTemperatureCelsius: validated.ovenTemperatureCelsius,
+            bakingTimeMinutes: validated.bakingTimeMinutes,
+            resultRating: validated.resultRating,
+            fermentationTemperatureCelsius: validated.fermentationTemperatureCelsius,
+            fermentationTemperatureSource: validated.fermentationTemperatureSource,
+            retardationMinutes: validated.retardationMinutes,
+            numberOfFolds: validated.numberOfFolds,
+            steamingMethod: validated.steamingMethod,
+            flourNotes: validated.flourNotes,
+            notes: validated.notes,
+            createdAt: now,
+            updatedAt: now
+        )
+        bakes.insert(bake, at: 0)
+        return bake
+    }
+}

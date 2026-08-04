@@ -7,6 +7,7 @@ struct HomeView: View {
     @EnvironmentObject private var router: HomeNavigationRouter
 
     @ObservedObject var viewModel: StarterWorkflowViewModel
+    @ObservedObject var bakeJournalViewModel: BakeJournalViewModel
     @State private var isShowingPaywall = false
     @State private var showCreateStarter = false
     @State private var hasLoadedHomeData = false
@@ -186,6 +187,30 @@ struct HomeView: View {
             } else {
                 missingStarterView(screen: "TimelineMissing")
             }
+        case .bakeJournal:
+            BakeJournalListView(viewModel: bakeJournalViewModel)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeJournalRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeJournal",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeJournal
+                )
+        case .bakeCreate:
+            BakeCreateView(viewModel: bakeJournalViewModel)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeCreateRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeCreate",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeCreate
+                )
+        case .bakeDetail(let bakeID):
+            BakeDetailView(viewModel: bakeJournalViewModel, bakeID: bakeID)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeDetail",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeDetail
+                )
         }
     }
 
@@ -238,6 +263,12 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppTheme.Colors.accent)
+
+                Button("Bake Journal") {
+                    router.push(.bakeJournal, screen: "Home")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.openBakeJournal)
             }
         }
     }
@@ -292,6 +323,12 @@ struct HomeView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(AppTheme.Colors.secondaryText)
                 .font(.footnote)
+
+                Button("Bake Journal") {
+                    router.push(.bakeJournal, screen: "Home")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.openBakeJournal)
             }
         }
     }
