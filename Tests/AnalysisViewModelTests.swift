@@ -41,21 +41,7 @@ final class AnalysisViewModelTests: XCTestCase {
         let persisted = PersistedLoafAnalysisIDs(scanID: UUID(), analysisID: UUID())
         let repo = FakeLoafAnalysisRepository(
             analyzeResult: result,
-            persistIDs: persisted,
-            bakeAnalyses: [
-                CanonicalLoafAnalysis(
-                    scanID: persisted.scanID,
-                    analysisID: persisted.analysisID,
-                    bakeID: bakeID,
-                    storagePath: "user/2026/08/file.jpg",
-                    model: result.model,
-                    promptVersion: result.promptVersion,
-                    confidence: result.analysis.confidence,
-                    analysis: result.analysis,
-                    renderedExplanation: result.analysis.summary,
-                    createdAt: Date()
-                )
-            ]
+            persistIDs: persisted
         )
         let bakeRepo = FakeBakeRepository(bakes: [bake])
         let viewModel = AnalysisViewModel(
@@ -69,11 +55,15 @@ final class AnalysisViewModelTests: XCTestCase {
 
         await viewModel.analyze(userID: UUID())
 
-        XCTAssertEqual(viewModel.latestResult, result)
         XCTAssertEqual(viewModel.latestPersistedIDs, persisted)
         XCTAssertEqual(viewModel.comparison?.mode, .baseline)
+        XCTAssertEqual(viewModel.latestResult?.analysis.comparison?.comparisonMode, .baseline)
+        XCTAssertNil(viewModel.latestResult?.analysis.comparison?.previousBakeID)
+        XCTAssertEqual(viewModel.latestResult?.analysis.overallScore, result.analysis.overallScore)
         XCTAssertEqual(repo.persistCallCount, 1)
         XCTAssertEqual(repo.lastPersistedBakeID, bakeID)
+        XCTAssertEqual(repo.lastPersistedResult?.analysis.comparison?.comparisonMode, .baseline)
+        XCTAssertNil(repo.lastPersistedResult?.analysis.comparison?.previousBakeID)
         XCTAssertNotNil(repo.lastAnalyzeContext)
     }
 
@@ -198,6 +188,7 @@ private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
     private(set) var persistCallCount = 0
     private(set) var analyzeCallCount = 0
     private(set) var lastPersistedBakeID: UUID?
+    private(set) var lastPersistedResult: LoafAnalyzeResult?
     private(set) var lastAnalyzeContext: LoafAnalyzeContext?
 
     init(
@@ -241,9 +232,26 @@ private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
     ) async throws -> PersistedLoafAnalysisIDs {
         persistCallCount += 1
         lastPersistedBakeID = bakeID
+        lastPersistedResult = result
         if let persistError { throw persistError }
-        if let persistIDs { return persistIDs }
-        throw AppError.unknown("persist failed")
+        guard let persistIDs else {
+            throw AppError.unknown("persist failed")
+        }
+        bakeAnalyses = [
+            CanonicalLoafAnalysis(
+                scanID: persistIDs.scanID,
+                analysisID: persistIDs.analysisID,
+                bakeID: bakeID,
+                storagePath: imagePath,
+                model: result.model,
+                promptVersion: result.promptVersion,
+                confidence: result.analysis.confidence,
+                analysis: result.analysis,
+                renderedExplanation: result.analysis.summary,
+                createdAt: Date()
+            )
+        ]
+        return persistIDs
     }
 
     func fetchHistory() async throws -> [LoafScan] {
