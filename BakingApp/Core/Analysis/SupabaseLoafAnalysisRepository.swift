@@ -38,9 +38,17 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
         }
     }
 
-    func analyzeLoaf(imagePath: String, promptVersion: String = "v1") async throws -> LoafAnalyzeResult {
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String = "v1",
+        context: LoafAnalyzeContext? = nil
+    ) async throws -> LoafAnalyzeResult {
         let authSession = try await client.auth.session
-        let payload = AnalyzeLoafPayload(imagePath: imagePath, promptVersion: promptVersion)
+        let payload = AnalyzeLoafPayload(
+            imagePath: imagePath,
+            promptVersion: promptVersion,
+            context: context
+        )
 
         let endpoint = supabaseURL
             .appendingPathComponent("functions")
@@ -74,7 +82,7 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
         qualityScore: Double? = nil,
         qualityIssue: String? = nil
     ) async throws -> PersistedLoafAnalysisIDs {
-        if let existing = try await reconcilePersistedIDs(imagePath: imagePath) {
+        if let existing = try await reconcilePersistedIDs(imagePath: imagePath, bakeID: bakeID) {
             return existing
         }
 
@@ -110,7 +118,11 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
             throw AppError.unknown("Could not save loaf analysis.")
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            if let reconciled = try await reconcilePersistedIDs(imagePath: imagePath) {
+            if let bodyText = String(data: data, encoding: .utf8),
+               bodyText.contains("Storage path already linked to a different bake") {
+                throw AppError.unknown(LoafPersistMismatchError.storagePathLinkedToDifferentBake.errorDescription ?? "Bake mismatch")
+            }
+            if let reconciled = try await reconcilePersistedIDs(imagePath: imagePath, bakeID: bakeID) {
                 return reconciled
             }
             throw AppError.unknown("Could not save loaf analysis.")
@@ -118,7 +130,7 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
         do {
             return try PersistLoafAnalysisResponseDecoder.decodeIDs(data)
         } catch {
-            if let reconciled = try await reconcilePersistedIDs(imagePath: imagePath) {
+            if let reconciled = try await reconcilePersistedIDs(imagePath: imagePath, bakeID: bakeID) {
                 return reconciled
             }
             throw AppError.malformedResponse
@@ -169,17 +181,21 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
         return "\(userID.uuidString.lowercased())/\(year)/\(month)/\(imageID.uuidString.lowercased()).jpg"
     }
 
-    private func reconcilePersistedIDs(imagePath: String) async throws -> PersistedLoafAnalysisIDs? {
+    private func reconcilePersistedIDs(imagePath: String, bakeID: UUID) async throws -> PersistedLoafAnalysisIDs? {
         let response = try await client
             .from("scans")
-            .select("id, ai_analyses(id)")
+            .select("id, bake_id, ai_analyses(id)")
             .eq("storage_path", value: imagePath)
             .eq("scan_type", value: "loaf")
             .order("created_at", ascending: true)
             .limit(1)
             .execute()
         let rows = try SupabaseJSONDecoder.make().decode([PersistedLoafLookupRow].self, from: response.data)
-        guard let row = rows.first, let analysisID = row.analyses.first?.id else {
+        guard let row = rows.first else { return nil }
+        guard row.bakeID == bakeID else {
+            throw AppError.unknown(LoafPersistMismatchError.storagePathLinkedToDifferentBake.errorDescription ?? "Bake mismatch")
+        }
+        guard let analysisID = row.analyses.first?.id else {
             return nil
         }
         return PersistedLoafAnalysisIDs(scanID: row.id, analysisID: analysisID)
@@ -188,16 +204,19 @@ final class SupabaseLoafAnalysisRepository: LoafAnalysisRepository {
 
 private struct PersistedLoafLookupRow: Decodable {
     let id: UUID
+    let bakeID: UUID?
     let analyses: [IDOnly]
 
     enum CodingKeys: String, CodingKey {
         case id
+        case bakeID = "bake_id"
         case analyses = "ai_analyses"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        bakeID = try container.decodeIfPresent(UUID.self, forKey: .bakeID)
         analyses = try PostgrestRelationDecoder.decodeManyOrOne(
             IDOnly.self,
             from: container,

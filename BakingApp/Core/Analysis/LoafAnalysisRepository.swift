@@ -3,7 +3,11 @@ import Foundation
 protocol LoafAnalysisRepository {
     func uploadImage(_ data: Data, userID: UUID) async throws -> String
     /// Stateless edge analysis only — does not persist.
-    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafAnalyzeResult
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String,
+        context: LoafAnalyzeContext?
+    ) async throws -> LoafAnalyzeResult
     /// Authenticated persistence into `scans` + `ai_analyses` for a bake.
     func persistLoafAnalysis(
         bakeID: UUID,

@@ -122,15 +122,17 @@ final class AppEnvironment: ObservableObject {
         let starterRepository = UITestingStarterRepository(
             populatedTimeline: UITestingBootstrap.usesPopulatedTimeline
         )
+        let bakeRepository = UITestingBakeRepository(starterRepository: starterRepository)
+        bakeRepository.seedForUITestingIfNeeded()
         return AppEnvironment(
             configResult: .failure(.missingValue("UI testing uses fixture repositories")),
             authManager: authManager,
             billingManager: billingManager,
             onboardingStore: OnboardingStore(defaults: defaults),
             analytics: NoopAnalyticsTracker(),
-            loafAnalysisRepository: NoopLoafAnalysisRepository(),
+            loafAnalysisRepository: UITestingLoafAnalysisRepository(bakeRepository: bakeRepository),
             starterRepository: starterRepository,
-            bakeRepository: UITestingBakeRepository(starterRepository: starterRepository)
+            bakeRepository: bakeRepository
         )
     }
 }
@@ -165,7 +167,11 @@ private struct NoopAnalyticsTracker: AnalyticsTracking {
 
 private struct NoopLoafAnalysisRepository: LoafAnalysisRepository {
     func uploadImage(_ data: Data, userID: UUID) async throws -> String { throw AppError.configuration("Configuration missing") }
-    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafAnalyzeResult {
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String,
+        context: LoafAnalyzeContext?
+    ) async throws -> LoafAnalyzeResult {
         throw AppError.configuration("Configuration missing")
     }
     func persistLoafAnalysis(

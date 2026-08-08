@@ -17,7 +17,7 @@ final class AnalysisViewModelTests: XCTestCase {
 
     func testMalformedResponseSetsFriendlyError() async {
         let repo = FakeLoafAnalysisRepository(analyzeError: AppError.malformedResponse)
-        let viewModel = AnalysisViewModel(repository: repo, analytics: NoopAnalytics())
+        let viewModel = AnalysisViewModel(repository: repo, isProUser: true, analytics: NoopAnalytics())
         viewModel.handleCapturedImage(patternImage(size: CGSize(width: 1200, height: 1200)))
 
         await viewModel.analyze(userID: UUID())
@@ -25,8 +25,18 @@ final class AnalysisViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.errorMessage, AppError.malformedResponse.errorDescription)
     }
 
-    func testAnalyzeWithBakeIDPersistsAndReloads() async {
+    func testProGateBlocksAnalyze() async {
+        let repo = FakeLoafAnalysisRepository(analyzeResult: sampleAnalyzeResult())
+        let viewModel = AnalysisViewModel(repository: repo, isProUser: false, analytics: NoopAnalytics())
+        viewModel.handleCapturedImage(patternImage(size: CGSize(width: 1200, height: 1200)))
+        await viewModel.analyze(userID: UUID())
+        XCTAssertEqual(viewModel.errorMessage, AppError.subscriptionRequired.errorDescription)
+        XCTAssertEqual(repo.analyzeCallCount, 0)
+    }
+
+    func testAnalyzeWithBakeIDPersistsAndBuildsComparison() async {
         let bakeID = UUID()
+        let bake = sampleBake(id: bakeID, name: "Current", bakedAt: Date())
         let result = sampleAnalyzeResult()
         let persisted = PersistedLoafAnalysisIDs(scanID: UUID(), analysisID: UUID())
         let repo = FakeLoafAnalysisRepository(
@@ -47,16 +57,44 @@ final class AnalysisViewModelTests: XCTestCase {
                 )
             ]
         )
-        let viewModel = AnalysisViewModel(repository: repo, bakeID: bakeID, analytics: NoopAnalytics())
+        let bakeRepo = FakeBakeRepository(bakes: [bake])
+        let viewModel = AnalysisViewModel(
+            repository: repo,
+            bakeID: bakeID,
+            bakeRepository: bakeRepo,
+            isProUser: true,
+            analytics: NoopAnalytics()
+        )
         viewModel.handleCapturedImage(patternImage(size: CGSize(width: 1200, height: 1200)))
 
         await viewModel.analyze(userID: UUID())
 
         XCTAssertEqual(viewModel.latestResult, result)
         XCTAssertEqual(viewModel.latestPersistedIDs, persisted)
-        XCTAssertEqual(viewModel.bakeAnalyses.count, 1)
+        XCTAssertEqual(viewModel.comparison?.mode, .baseline)
         XCTAssertEqual(repo.persistCallCount, 1)
         XCTAssertEqual(repo.lastPersistedBakeID, bakeID)
+        XCTAssertNotNil(repo.lastAnalyzeContext)
+    }
+
+    func testPersistMismatchRejection() async {
+        let bakeID = UUID()
+        let bake = sampleBake(id: bakeID, name: "Current", bakedAt: Date())
+        let repo = FakeLoafAnalysisRepository(
+            analyzeResult: sampleAnalyzeResult(),
+            persistError: AppError.unknown(LoafPersistMismatchError.storagePathLinkedToDifferentBake.errorDescription ?? "mismatch")
+        )
+        let viewModel = AnalysisViewModel(
+            repository: repo,
+            bakeID: bakeID,
+            bakeRepository: FakeBakeRepository(bakes: [bake]),
+            isProUser: true,
+            analytics: NoopAnalytics()
+        )
+        viewModel.handleCapturedImage(patternImage(size: CGSize(width: 1200, height: 1200)))
+        await viewModel.analyze(userID: UUID())
+        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.errorMessage?.contains("different bake") == true)
     }
 
     private func sampleScan() -> LoafScan {
@@ -89,8 +127,36 @@ final class AnalysisViewModelTests: XCTestCase {
                 strengths: ["Good crust"],
                 improvements: ["More steam"],
                 nextSteps: ["Shorter final proof"],
-                summary: "Strong loaf."
+                summary: "Strong loaf.",
+                why: "Baseline why"
             )
+        )
+    }
+
+    private func sampleBake(id: UUID, name: String, bakedAt: Date) -> Bake {
+        Bake(
+            id: id,
+            userID: UUID(),
+            starterID: UUID(),
+            bakedAt: bakedAt,
+            name: name,
+            doughHydrationPercent: 75,
+            bulkFermentationMinutes: 240,
+            finalProofMinutes: 120,
+            mixingMethod: "Hand mix",
+            shapingMethod: "Boule",
+            ovenTemperatureCelsius: 230,
+            bakingTimeMinutes: 40,
+            resultRating: 4,
+            fermentationTemperatureCelsius: 24,
+            fermentationTemperatureSource: .room,
+            retardationMinutes: nil,
+            numberOfFolds: nil,
+            steamingMethod: nil,
+            flourNotes: nil,
+            notes: nil,
+            createdAt: bakedAt,
+            updatedAt: bakedAt
         )
     }
 
@@ -106,27 +172,47 @@ final class AnalysisViewModelTests: XCTestCase {
     }
 }
 
+private final class FakeBakeRepository: BakeRepository {
+    var bakes: [Bake]
+    init(bakes: [Bake]) { self.bakes = bakes }
+    func listBakes() async throws -> [Bake] { bakes }
+    func fetchBake(bakeID: UUID) async throws -> Bake {
+        guard let bake = bakes.first(where: { $0.id == bakeID }) else {
+            throw AppError.unknown("missing")
+        }
+        return bake
+    }
+    func createBake(_ input: BakeCreateInput) async throws -> Bake {
+        throw AppError.unknown("unused")
+    }
+}
+
 private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
     var uploadedPath: String = "user/2026/07/file.jpg"
     var analyzeResult: LoafAnalyzeResult?
     var history: [LoafScan] = []
     var bakeAnalyses: [CanonicalLoafAnalysis] = []
     var analyzeError: Error?
+    var persistError: Error?
     var persistIDs: PersistedLoafAnalysisIDs?
     private(set) var persistCallCount = 0
+    private(set) var analyzeCallCount = 0
     private(set) var lastPersistedBakeID: UUID?
+    private(set) var lastAnalyzeContext: LoafAnalyzeContext?
 
     init(
         history: [LoafScan] = [],
         analyzeResult: LoafAnalyzeResult? = nil,
         analyzeError: Error? = nil,
         persistIDs: PersistedLoafAnalysisIDs? = nil,
+        persistError: Error? = nil,
         bakeAnalyses: [CanonicalLoafAnalysis] = []
     ) {
         self.history = history
         self.analyzeResult = analyzeResult
         self.analyzeError = analyzeError
         self.persistIDs = persistIDs
+        self.persistError = persistError
         self.bakeAnalyses = bakeAnalyses
     }
 
@@ -134,7 +220,13 @@ private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
         uploadedPath
     }
 
-    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafAnalyzeResult {
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String,
+        context: LoafAnalyzeContext?
+    ) async throws -> LoafAnalyzeResult {
+        analyzeCallCount += 1
+        lastAnalyzeContext = context
         if let analyzeError { throw analyzeError }
         if let analyzeResult { return analyzeResult }
         throw AppError.analysisFailed
@@ -149,6 +241,7 @@ private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
     ) async throws -> PersistedLoafAnalysisIDs {
         persistCallCount += 1
         lastPersistedBakeID = bakeID
+        if let persistError { throw persistError }
         if let persistIDs { return persistIDs }
         throw AppError.unknown("persist failed")
     }
@@ -162,7 +255,7 @@ private final class FakeLoafAnalysisRepository: LoafAnalysisRepository {
     }
 
     func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
-        URL(string: "https://example.com/image.jpg")!
+        URL(string: "https://example.com")!
     }
 }
 

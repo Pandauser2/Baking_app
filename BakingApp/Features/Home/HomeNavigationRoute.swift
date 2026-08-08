@@ -12,6 +12,8 @@ enum HomeNavigationRoute: Hashable {
     case bakeJournal
     case bakeCreate
     case bakeDetail(UUID)
+    case scanLoaf(UUID)
+    case loafAnalysisResult(UUID)
 }
 
 enum HomeNavigationAccessibilityID {
@@ -39,6 +41,10 @@ enum HomeNavigationAccessibilityID {
     static let bakeCreateError = "bake.create.error"
     static let bakeCreateStarterPicker = "bake.create.starterPicker"
     static let bakeDetailRoot = "bake.detail.root"
+    static let loafScanRoot = "loaf.scan.root"
+    static let loafAnalysisResultRoot = "loaf.analysisResult.root"
+    static let bakeDetailScanLoaf = "bake.detail.scanLoaf"
+    static let bakeDetailViewAnalysis = "bake.detail.viewAnalysis"
 
     static let backStarterDetail = "nav.back.starterDetail"
     static let backTimeline = "nav.back.timeline"
@@ -50,4 +56,6 @@ enum HomeNavigationAccessibilityID {
     static let backBakeJournal = "nav.back.bakeJournal"
     static let backBakeCreate = "nav.back.bakeCreate"
     static let backBakeDetail = "nav.back.bakeDetail"
+    static let backLoafScan = "nav.back.loafScan"
+    static let backLoafAnalysisResult = "nav.back.loafAnalysisResult"
 }

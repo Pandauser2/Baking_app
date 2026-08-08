@@ -40,8 +40,11 @@ struct LoafAIAnalysis: Codable, Equatable {
     let overallScore: Int
     let strengths: [String]
     let improvements: [String]
+    /// Exactly one highest-impact recommendation for the next bake (Phase C2).
     let nextSteps: [String]
     let summary: String
+    /// AI explanation of differences / baseline context. Never invents process values.
+    let why: String
 
     enum CodingKeys: String, CodingKey {
         case crumbScore = "crumb_score"
@@ -52,10 +55,50 @@ struct LoafAIAnalysis: Codable, Equatable {
         case improvements
         case nextSteps = "next_steps"
         case summary
+        case why
+    }
+
+    init(
+        crumbScore: Int,
+        crustScore: Int,
+        ovenSpringScore: Int,
+        overallScore: Int,
+        strengths: [String],
+        improvements: [String],
+        nextSteps: [String],
+        summary: String,
+        why: String = ""
+    ) {
+        self.crumbScore = crumbScore
+        self.crustScore = crustScore
+        self.ovenSpringScore = ovenSpringScore
+        self.overallScore = overallScore
+        self.strengths = strengths
+        self.improvements = improvements
+        self.nextSteps = nextSteps
+        self.summary = summary
+        self.why = why
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        crumbScore = try container.decode(Int.self, forKey: .crumbScore)
+        crustScore = try container.decode(Int.self, forKey: .crustScore)
+        ovenSpringScore = try container.decode(Int.self, forKey: .ovenSpringScore)
+        overallScore = try container.decode(Int.self, forKey: .overallScore)
+        strengths = try container.decode([String].self, forKey: .strengths)
+        improvements = try container.decode([String].self, forKey: .improvements)
+        nextSteps = try container.decode([String].self, forKey: .nextSteps)
+        summary = try container.decode(String.self, forKey: .summary)
+        why = try container.decodeIfPresent(String.self, forKey: .why) ?? ""
     }
 
     var confidence: Double {
         Double(overallScore) / 100.0
+    }
+
+    var recommendation: String {
+        nextSteps.first ?? ""
     }
 }
 
@@ -98,10 +141,23 @@ struct CanonicalLoafAnalysis: Equatable, Identifiable {
 struct AnalyzeLoafPayload: Codable, Equatable {
     let imagePath: String
     let promptVersion: String
+    let context: LoafAnalyzeContext?
 
     enum CodingKeys: String, CodingKey {
         case imagePath = "image_path"
         case promptVersion = "prompt_version"
+        case context
+    }
+}
+
+enum LoafPersistMismatchError: LocalizedError, Equatable {
+    case storagePathLinkedToDifferentBake
+
+    var errorDescription: String? {
+        switch self {
+        case .storagePathLinkedToDifferentBake:
+            return "This photo is already saved to a different bake."
+        }
     }
 }
 

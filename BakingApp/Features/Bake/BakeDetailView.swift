@@ -1,8 +1,13 @@
 import SwiftUI
 
 struct BakeDetailView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var router: HomeNavigationRouter
     @ObservedObject var viewModel: BakeJournalViewModel
     let bakeID: UUID
+
+    @State private var loafAnalyses: [CanonicalLoafAnalysis] = []
+    @State private var comparisonSummary: String?
 
     var body: some View {
         Group {
@@ -52,6 +57,31 @@ struct BakeDetailView: View {
                             }
                         }
                     }
+
+                    Section("Loaf scan") {
+                        LabeledContent("Status", value: loafAnalyses.isEmpty ? "Not scanned" : "Analyzed")
+                        if let comparisonSummary {
+                            Text(comparisonSummary)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("bake.detail.comparisonSummary")
+                        }
+                        if loafAnalyses.isEmpty {
+                            Button("Scan loaf") {
+                                router.push(.scanLoaf(bakeID), screen: "BakeDetail")
+                            }
+                            .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailScanLoaf)
+                        } else {
+                            Button("View loaf analysis") {
+                                router.push(.loafAnalysisResult(bakeID), screen: "BakeDetail")
+                            }
+                            .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailViewAnalysis)
+                            Button("Scan again") {
+                                router.push(.scanLoaf(bakeID), screen: "BakeDetail")
+                            }
+                            .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailScanLoaf)
+                        }
+                    }
                 }
             } else if viewModel.errorMessage != nil {
                 VStack(spacing: 12) {
@@ -68,8 +98,72 @@ struct BakeDetailView: View {
             }
         }
         .navigationTitle("Bake Details")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if !loafAnalyses.isEmpty {
+                    Button("View analysis") {
+                        router.push(.loafAnalysisResult(bakeID), screen: "BakeDetail")
+                    }
+                    .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailViewAnalysis)
+                }
+                Button(loafAnalyses.isEmpty ? "Scan loaf" : "Scan again") {
+                    router.push(.scanLoaf(bakeID), screen: "BakeDetail")
+                }
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailScanLoaf)
+            }
+        }
         .task {
             await viewModel.selectBake(id: bakeID)
+            await loadLoafState()
+        }
+        .onAppear {
+            Task { await loadLoafState() }
+        }
+    }
+
+    private func loadLoafState() async {
+        do {
+            let analyses = try await environment.loafAnalysisRepository.fetchLoafAnalyses(forBakeID: bakeID)
+            loafAnalyses = analyses
+            guard let latest = analyses.sorted(by: { $0.createdAt > $1.createdAt }).first else {
+                comparisonSummary = nil
+                return
+            }
+            let bake: Bake
+            if let selected = viewModel.selectedBake {
+                bake = selected
+            } else {
+                bake = try await environment.bakeRepository.fetchBake(bakeID: bakeID)
+            }
+            let allBakes = try await environment.bakeRepository.listBakes()
+            let previous = PreviousBakeSelector.select(current: bake, from: allBakes)
+            var previousAnalysis: CanonicalLoafAnalysis?
+            if let previous {
+                previousAnalysis = try await environment.loafAnalysisRepository
+                    .fetchLoafAnalyses(forBakeID: previous.bake.id)
+                    .sorted { $0.createdAt > $1.createdAt }
+                    .first
+            }
+            let presentation = LoafComparisonEngine.buildPresentation(
+                currentBake: bake,
+                currentAnalysis: latest.analysis,
+                previous: previous,
+                previousAnalysis: previousAnalysis,
+                why: latest.analysis.why,
+                recommendation: latest.analysis.recommendation
+            )
+            switch presentation.mode {
+            case .baseline:
+                comparisonSummary = "Baseline loaf saved."
+            case .processComparison:
+                comparisonSummary = "Process comparison vs \(presentation.previousBakeName ?? "previous bake")."
+            case .fullComparison:
+                let improved = presentation.scoreDeltas.filter { $0.trend == .improved }.count
+                let regressed = presentation.scoreDeltas.filter { $0.trend == .regressed }.count
+                comparisonSummary = "Full comparison: \(improved) improved, \(regressed) regressed."
+            }
+        } catch {
+            // Non-fatal: journal still shows.
         }
     }
 

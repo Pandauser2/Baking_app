@@ -1,20 +1,16 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 
 struct AnalysisView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var authManager: AuthManager
     @EnvironmentObject private var billingManager: BillingManager
+    @EnvironmentObject private var router: HomeNavigationRouter
 
-    @StateObject private var viewModel: AnalysisViewModel
+    @ObservedObject var viewModel: AnalysisViewModel
     @State private var isShowingCamera = false
     @State private var isShowingPaywall = false
-    @State private var shouldShowResult = false
-    @State private var shouldShowHistory = false
-
-    init(viewModel: AnalysisViewModel) {
-        _viewModel = StateObject(wrappedValue: viewModel)
-    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,10 +18,12 @@ struct AnalysisView: View {
                 VStack(spacing: 12) {
                     Text("Pro is required for loaf analysis.")
                         .font(.headline)
+                        .accessibilityIdentifier("loaf.scan.proRequired")
                     Button("Open Paywall") {
                         isShowingPaywall = true
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("loaf.scan.openPaywall")
                 }
                 .padding(.top, 40)
             } else {
@@ -34,7 +32,8 @@ struct AnalysisView: View {
             Spacer()
         }
         .padding()
-        .navigationTitle("Loaf Analysis")
+        .navigationTitle("Scan Loaf")
+        .accessibilityIdentifier(HomeNavigationAccessibilityID.loafScanRoot)
         .sheet(isPresented: $isShowingCamera) {
             CameraPicker { image in
                 viewModel.handleCapturedImage(image)
@@ -43,17 +42,39 @@ struct AnalysisView: View {
         .sheet(isPresented: $isShowingPaywall) {
             PaywallView()
         }
-        .navigationDestination(isPresented: $shouldShowResult) {
-            if let result = viewModel.latestResult {
-                AnalysisResultView(
-                    result: result,
-                    imagePath: viewModel.latestImagePath,
-                    viewModel: viewModel
-                )
+        .task {
+            viewModel.updateProStatus(billingManager.hasProEntitlement)
+            await viewModel.prepareBakeContext()
+            if UITestingBootstrap.loafAutoAnalyze,
+               billingManager.hasProEntitlement,
+               case .signedIn(let session) = authManager.status {
+                let size = CGSize(width: 1200, height: 1200)
+                let renderer = UIGraphicsImageRenderer(size: size)
+                let image = renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: size))
+                    UIColor.brown.setFill()
+                    let tile: CGFloat = 40
+                    var y: CGFloat = 0
+                    while y < size.height {
+                        var x: CGFloat = 0
+                        var toggle = Int(y / tile) % 2 == 0
+                        while x < size.width {
+                            if toggle {
+                                context.fill(CGRect(x: x, y: y, width: tile, height: tile))
+                            }
+                            toggle.toggle()
+                            x += tile
+                        }
+                        y += tile
+                    }
+                }
+                viewModel.handleCapturedImage(image)
+                await analyzeAndNavigate(userID: session.userID)
             }
         }
-        .navigationDestination(isPresented: $shouldShowHistory) {
-            AnalysisHistoryView(viewModel: viewModel)
+        .onChange(of: billingManager.hasProEntitlement) { isPro in
+            viewModel.updateProStatus(isPro)
         }
         .task(id: viewModel.selectedItem) {
             await viewModel.handleSelectedPhotoItem()
@@ -98,30 +119,38 @@ struct AnalysisView: View {
             }
 
             if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("loaf.scan.error")
+                    Button("Retry") {
+                        guard case .signedIn(let session) = authManager.status else { return }
+                        Task { await analyzeAndNavigate(userID: session.userID) }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("loaf.scan.retry")
+                }
             }
 
             Button("Analyze") {
                 guard case .signedIn(let session) = authManager.status else { return }
-                Task {
-                    await viewModel.analyze(userID: session.userID)
-                    shouldShowResult = viewModel.latestResult != nil
-                }
+                Task { await analyzeAndNavigate(userID: session.userID) }
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("loaf.scan.analyze")
             .disabled(
                 viewModel.selectedImage == nil
                     || viewModel.isUploading
                     || viewModel.isAnalyzing
                     || viewModel.isPersisting
             )
+        }
+    }
 
-            Button("History") {
-                shouldShowHistory = true
-            }
-            .buttonStyle(.bordered)
+    private func analyzeAndNavigate(userID: UUID) async {
+        await viewModel.analyze(userID: userID)
+        if viewModel.latestResult != nil, let bakeID = viewModel.currentBake?.id {
+            router.push(.loafAnalysisResult(bakeID), screen: "ScanLoaf")
         }
     }
 }
-
