@@ -226,35 +226,20 @@ struct HomeView: View {
                 accessibilityIdentifier: HomeNavigationAccessibilityID.backLoafScan
             )
         case .loafAnalysisResult(let bakeID):
-            loafResultDestination(bakeID: bakeID)
+            LoafAnalysisResultHost(
+                viewModel: loafSession.viewModel(
+                    for: bakeID,
+                    environment: environment,
+                    isProUser: billingManager.hasProEntitlement
+                ),
+                onSaveBaseline: { router.pop(screen: "LoafAnalysisResult") }
+            )
+            .homeBackToolbar(
+                router: router,
+                screen: "LoafAnalysisResult",
+                accessibilityIdentifier: HomeNavigationAccessibilityID.backLoafAnalysisResult
+            )
         }
-    }
-
-    @ViewBuilder
-    private func loafResultDestination(bakeID: UUID) -> some View {
-        let vm = loafSession.viewModel(
-            for: bakeID,
-            environment: environment,
-            isProUser: billingManager.hasProEntitlement
-        )
-        Group {
-            if let result = vm.latestResult {
-                AnalysisResultView(
-                    result: result,
-                    imagePath: vm.latestImagePath,
-                    viewModel: vm,
-                    onSaveBaseline: { router.pop(screen: "LoafAnalysisResult") }
-                )
-            } else {
-                ProgressView("Loading analysis...")
-                    .task { await vm.prepareBakeContext() }
-            }
-        }
-        .homeBackToolbar(
-            router: router,
-            screen: "LoafAnalysisResult",
-            accessibilityIdentifier: HomeNavigationAccessibilityID.backLoafAnalysisResult
-        )
     }
 
     private func missingStarterView(screen: String) -> some View {
