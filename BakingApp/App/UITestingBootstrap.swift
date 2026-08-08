@@ -378,8 +378,19 @@ final class UITestingLoafAnalysisRepository: LoafAnalysisRepository {
         overall: Int,
         crumb: Int,
         crust: Int,
-        spring: Int
+        spring: Int,
+        comparison: LoafComparisonSnapshot? = nil
     ) -> CanonicalLoafAnalysis {
+        let recommendation = "Increase steam"
+        let snapshot = comparison ?? LoafComparisonSnapshot(
+            comparisonMode: .baseline,
+            previousBakeID: nil,
+            previousStarterID: nil,
+            starterChanged: false,
+            scoreDeltas: [],
+            processDeltas: [],
+            recommendation: recommendation
+        )
         let analysis = LoafAIAnalysis(
             crumbScore: crumb,
             crustScore: crust,
@@ -387,9 +398,10 @@ final class UITestingLoafAnalysisRepository: LoafAnalysisRepository {
             overallScore: overall,
             strengths: ["Open crumb"],
             improvements: ["Shape tension"],
-            nextSteps: ["Increase steam"],
+            nextSteps: [recommendation],
             summary: "UITest loaf assessment.",
-            why: "UITest why explanation."
+            why: "UITest why explanation.",
+            comparison: snapshot
         )
         return CanonicalLoafAnalysis(
             scanID: UUID(),

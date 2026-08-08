@@ -66,14 +66,16 @@ final class AnalysisViewModel: ObservableObject {
             }
             bakeAnalyses = try await repository.fetchLoafAnalyses(forBakeID: bakeID)
             if let existing = bakeAnalyses.sorted(by: { $0.createdAt > $1.createdAt }).first {
-                comparison = LoafComparisonEngine.buildPresentation(
-                    currentBake: bake,
-                    currentAnalysis: existing.analysis,
-                    previous: previousRef,
-                    previousAnalysis: previousAnalysis,
-                    why: existing.analysis.why,
-                    recommendation: existing.analysis.recommendation
-                )
+                if let snapshot = existing.analysis.comparison {
+                    comparison = LoafComparisonEngine.presentation(
+                        from: snapshot,
+                        analysis: existing.analysis,
+                        previousBakeName: previousRef?.bake.name
+                    )
+                } else {
+                    // Legacy rows without snapshot: do not silently recompute against live journal.
+                    comparison = nil
+                }
                 latestResult = LoafAnalyzeResult(
                     model: existing.model,
                     promptVersion: existing.promptVersion,
@@ -179,22 +181,46 @@ final class AnalysisViewModel: ObservableObject {
             if let bakeID, let bake = currentBake {
                 isPersisting = true
                 progressMessage = "Saving analysis..."
-                latestPersistedIDs = try await repository.persistLoafAnalysis(
-                    bakeID: bakeID,
-                    imagePath: imagePath,
-                    result: result,
-                    qualityScore: nil,
-                    qualityIssue: nil
-                )
-                bakeAnalyses = try await repository.fetchLoafAnalyses(forBakeID: bakeID)
-                comparison = LoafComparisonEngine.buildPresentation(
+                let snapshot = LoafComparisonEngine.buildSnapshot(
                     currentBake: bake,
                     currentAnalysis: result.analysis,
                     previous: previousRef,
                     previousAnalysis: previousAnalysis,
-                    why: result.analysis.why,
                     recommendation: result.analysis.recommendation
                 )
+                let persistResult = LoafAnalyzeResult(
+                    model: result.model,
+                    promptVersion: result.promptVersion,
+                    analysis: result.analysis.encodingWithComparison(snapshot)
+                )
+                latestPersistedIDs = try await repository.persistLoafAnalysis(
+                    bakeID: bakeID,
+                    imagePath: imagePath,
+                    result: persistResult,
+                    qualityScore: nil,
+                    qualityIssue: nil
+                )
+                bakeAnalyses = try await repository.fetchLoafAnalyses(forBakeID: bakeID)
+                let reloaded = bakeAnalyses.sorted { $0.createdAt > $1.createdAt }.first
+                if let saved = reloaded?.analysis.comparison {
+                    comparison = LoafComparisonEngine.presentation(
+                        from: saved,
+                        analysis: reloaded?.analysis ?? persistResult.analysis,
+                        previousBakeName: previousRef?.bake.name
+                    )
+                    latestResult = LoafAnalyzeResult(
+                        model: reloaded?.model ?? persistResult.model,
+                        promptVersion: reloaded?.promptVersion ?? persistResult.promptVersion,
+                        analysis: reloaded?.analysis ?? persistResult.analysis
+                    )
+                } else {
+                    comparison = LoafComparisonEngine.presentation(
+                        from: snapshot,
+                        analysis: persistResult.analysis,
+                        previousBakeName: previousRef?.bake.name
+                    )
+                    latestResult = persistResult
+                }
                 isPersisting = false
             }
 

@@ -129,37 +129,19 @@ struct BakeDetailView: View {
                 comparisonSummary = nil
                 return
             }
-            let bake: Bake
-            if let selected = viewModel.selectedBake {
-                bake = selected
-            } else {
-                bake = try await environment.bakeRepository.fetchBake(bakeID: bakeID)
+            // Historical summary reads the saved snapshot only — never recomputes against live journal.
+            guard let snapshot = latest.analysis.comparison else {
+                comparisonSummary = nil
+                return
             }
-            let allBakes = try await environment.bakeRepository.listBakes()
-            let previous = PreviousBakeSelector.select(current: bake, from: allBakes)
-            var previousAnalysis: CanonicalLoafAnalysis?
-            if let previous {
-                previousAnalysis = try await environment.loafAnalysisRepository
-                    .fetchLoafAnalyses(forBakeID: previous.bake.id)
-                    .sorted { $0.createdAt > $1.createdAt }
-                    .first
-            }
-            let presentation = LoafComparisonEngine.buildPresentation(
-                currentBake: bake,
-                currentAnalysis: latest.analysis,
-                previous: previous,
-                previousAnalysis: previousAnalysis,
-                why: latest.analysis.why,
-                recommendation: latest.analysis.recommendation
-            )
-            switch presentation.mode {
+            switch snapshot.comparisonMode {
             case .baseline:
                 comparisonSummary = "Baseline loaf saved."
             case .processComparison:
-                comparisonSummary = "Process comparison vs \(presentation.previousBakeName ?? "previous bake")."
+                comparisonSummary = "Process comparison vs previous bake."
             case .fullComparison:
-                let improved = presentation.scoreDeltas.filter { $0.trend == .improved }.count
-                let regressed = presentation.scoreDeltas.filter { $0.trend == .regressed }.count
+                let improved = snapshot.scoreDeltas.filter { $0.classification == .improved }.count
+                let regressed = snapshot.scoreDeltas.filter { $0.classification == .regressed }.count
                 comparisonSummary = "Full comparison: \(improved) improved, \(regressed) regressed."
             }
         } catch {

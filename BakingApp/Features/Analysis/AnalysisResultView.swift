@@ -93,7 +93,7 @@ struct AnalysisResultView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("loaf.result.visualUnavailable")
-                deltasBlock(title: "Process changes", deltas: comparison.processDeltas)
+                processDeltasBlock(comparison.processDeltas)
             case .fullComparison:
                 sectionTitle("Compared with previous bake")
                 Text(comparedWithLine(comparison))
@@ -102,9 +102,9 @@ struct AnalysisResultView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                deltasBlock(title: "What improved / regressed", deltas: comparison.scoreDeltas)
+                scoreDeltasBlock(comparison.scoreDeltas)
                 if !comparison.processDeltas.isEmpty {
-                    deltasBlock(title: "Process changes", deltas: comparison.processDeltas)
+                    processDeltasBlock(comparison.processDeltas)
                 }
             }
         }
@@ -117,41 +117,82 @@ struct AnalysisResultView: View {
         return "Compared with your previous bake."
     }
 
-    private func deltasBlock(title: String, deltas: [DimensionDelta]) -> some View {
+    private func scoreDeltasBlock(_ deltas: [ScoreDeltaSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle(title)
+            sectionTitle("Loaf quality")
             ForEach(deltas) { delta in
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(delta.label).font(.subheadline.weight(.semibold))
-                        Text("\(delta.previousDisplay) → \(delta.currentDisplay)")
+                        Text("\(delta.previous) → \(delta.current)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(trendLabel(delta.trend))
+                    Text(scoreLabel(delta.classification))
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(trendColor(delta.trend))
+                        .foregroundStyle(scoreColor(delta.classification))
                 }
                 .accessibilityIdentifier("loaf.result.delta.\(delta.label)")
             }
         }
     }
 
-    private func trendLabel(_ trend: ComparisonTrend) -> String {
-        switch trend {
+    private func processDeltasBlock(_ deltas: [ProcessDeltaSnapshot]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Process changes")
+            ForEach(deltas) { delta in
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(delta.label).font(.subheadline.weight(.semibold))
+                        Text("\(formatProcess(delta.previous)) → \(formatProcess(delta.current))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(processLabel(delta.change))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(processColor(delta.change))
+                }
+                .accessibilityIdentifier("loaf.result.delta.\(delta.label)")
+            }
+        }
+    }
+
+    private func scoreLabel(_ classification: ScoreClassification) -> String {
+        switch classification {
         case .improved: return "Improved"
         case .regressed: return "Regressed"
         case .unchanged: return "Unchanged"
         }
     }
 
-    private func trendColor(_ trend: ComparisonTrend) -> Color {
-        switch trend {
+    private func scoreColor(_ classification: ScoreClassification) -> Color {
+        switch classification {
         case .improved: return .green
         case .regressed: return .orange
         case .unchanged: return .secondary
         }
+    }
+
+    private func processLabel(_ change: ProcessChangeDirection) -> String {
+        switch change {
+        case .increased: return "Increased"
+        case .decreased: return "Decreased"
+        case .unchanged: return "Unchanged"
+        }
+    }
+
+    private func processColor(_ change: ProcessChangeDirection) -> Color {
+        switch change {
+        case .increased: return .blue
+        case .decreased: return .purple
+        case .unchanged: return .secondary
+        }
+    }
+
+    private func formatProcess(_ value: Double) -> String {
+        value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
     }
 
     private func sectionTitle(_ title: String) -> some View {

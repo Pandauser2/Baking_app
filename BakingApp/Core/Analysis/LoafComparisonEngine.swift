@@ -42,78 +42,52 @@ enum LoafComparisonEngine {
         return .fullComparison
     }
 
-    static func classifyScoreDelta(current: Int, previous: Int) -> ComparisonTrend {
+    /// delta >= +5 → improved; delta <= -5 → regressed; otherwise unchanged.
+    static func classifyScoreDelta(current: Int, previous: Int) -> ScoreClassification {
         let delta = current - previous
-        if abs(delta) <= LoafComparisonThresholds.scorePoints {
-            return .unchanged
+        if delta >= LoafComparisonThresholds.scorePoints {
+            return .improved
         }
-        return delta > 0 ? .improved : .regressed
+        if delta <= -LoafComparisonThresholds.scorePoints {
+            return .regressed
+        }
+        return .unchanged
     }
 
-    static func classifyHydrationDelta(current: Double, previous: Double) -> ComparisonTrend {
-        classifyMagnitude(
-            current: current,
-            previous: previous,
-            unchangedWithin: LoafComparisonThresholds.hydrationPercent,
-            higherIsImproved: false
-        )
-    }
-
-    /// Process timing / temperature: direction is informational only (not quality).
-    /// We still label higher/lower using improved/regressed as "increased"/"decreased" semantics
-    /// via trend: improved = increased, regressed = decreased for display mapping in UI.
-    static func classifyNumericDelta(
+    static func classifyProcessDelta(
         current: Double,
         previous: Double,
         unchangedWithin: Double
-    ) -> ComparisonTrend {
+    ) -> ProcessChangeDirection {
         let delta = current - previous
         if abs(delta) <= unchangedWithin {
             return .unchanged
         }
-        return delta > 0 ? .improved : .regressed
+        return delta > 0 ? .increased : .decreased
     }
 
-    private static func classifyMagnitude(
-        current: Double,
-        previous: Double,
-        unchangedWithin: Double,
-        higherIsImproved: Bool
-    ) -> ComparisonTrend {
-        let delta = current - previous
-        if abs(delta) <= unchangedWithin {
-            return .unchanged
-        }
-        let increased = delta > 0
-        if higherIsImproved {
-            return increased ? .improved : .regressed
-        }
-        return increased ? .improved : .regressed
-    }
-
-    static func buildPresentation(
+    static func buildSnapshot(
         currentBake: Bake,
         currentAnalysis: LoafAIAnalysis,
         previous: PreviousBakeRef?,
         previousAnalysis: CanonicalLoafAnalysis?,
-        why: String,
         recommendation: String
-    ) -> LoafComparisonPresentation {
+    ) -> LoafComparisonSnapshot {
         let selectedMode = mode(previous: previous, previousAnalysis: previousAnalysis)
         let scores = LoafScoreSnapshot(analysis: currentAnalysis)
-        let processDeltas: [DimensionDelta]
-        let scoreDeltas: [DimensionDelta]
+        let scoreDeltas: [ScoreDeltaSnapshot]
+        let processDeltas: [ProcessDeltaSnapshot]
 
         switch selectedMode {
         case .baseline:
-            processDeltas = []
             scoreDeltas = []
+            processDeltas = []
         case .processComparison:
+            scoreDeltas = []
             processDeltas = makeProcessDeltas(
                 current: BakeProcessSnapshot(bake: currentBake),
                 previous: BakeProcessSnapshot(bake: previous!.bake)
             )
-            scoreDeltas = []
         case .fullComparison:
             processDeltas = makeProcessDeltas(
                 current: BakeProcessSnapshot(bake: currentBake),
@@ -125,23 +99,76 @@ enum LoafComparisonEngine {
             )
         }
 
-        return LoafComparisonPresentation(
-            mode: selectedMode,
+        return LoafComparisonSnapshot(
+            comparisonMode: selectedMode,
             previousBakeID: previous?.bake.id,
-            previousBakeName: previous?.bake.name,
+            previousStarterID: previous?.bake.starterID,
             starterChanged: previous?.starterChanged ?? false,
-            baselineMessage: selectedMode == .baseline ? baselineMessage : nil,
-            visualComparisonUnavailableMessage: selectedMode == .processComparison
-                ? visualUnavailableMessage
-                : nil,
             scoreDeltas: scoreDeltas,
             processDeltas: processDeltas,
-            assessment: currentAnalysis.summary,
-            why: why,
-            recommendation: recommendation,
+            recommendation: recommendation
+        )
+    }
+
+    static func presentation(
+        from snapshot: LoafComparisonSnapshot,
+        analysis: LoafAIAnalysis,
+        previousBakeName: String?
+    ) -> LoafComparisonPresentation {
+        LoafComparisonPresentation(
+            mode: snapshot.comparisonMode,
+            previousBakeID: snapshot.previousBakeID,
+            previousBakeName: previousBakeName,
+            previousStarterID: snapshot.previousStarterID,
+            starterChanged: snapshot.starterChanged,
+            baselineMessage: snapshot.comparisonMode == .baseline ? baselineMessage : nil,
+            visualComparisonUnavailableMessage: snapshot.comparisonMode == .processComparison
+                ? visualUnavailableMessage
+                : nil,
+            scoreDeltas: snapshot.scoreDeltas,
+            processDeltas: snapshot.processDeltas,
+            assessment: analysis.summary,
+            why: analysis.why,
+            recommendation: snapshot.recommendation.isEmpty ? analysis.recommendation : snapshot.recommendation,
+            strengths: analysis.strengths,
+            issues: analysis.improvements,
+            scores: LoafScoreSnapshot(analysis: analysis),
+            snapshot: snapshot
+        )
+    }
+
+    static func buildPresentation(
+        currentBake: Bake,
+        currentAnalysis: LoafAIAnalysis,
+        previous: PreviousBakeRef?,
+        previousAnalysis: CanonicalLoafAnalysis?,
+        why: String,
+        recommendation: String
+    ) -> LoafComparisonPresentation {
+        let snapshot = buildSnapshot(
+            currentBake: currentBake,
+            currentAnalysis: currentAnalysis,
+            previous: previous,
+            previousAnalysis: previousAnalysis,
+            recommendation: recommendation
+        )
+        // Keep why on analysis for display; snapshot owns recommendation + deltas.
+        let analysis = LoafAIAnalysis(
+            crumbScore: currentAnalysis.crumbScore,
+            crustScore: currentAnalysis.crustScore,
+            ovenSpringScore: currentAnalysis.ovenSpringScore,
+            overallScore: currentAnalysis.overallScore,
             strengths: currentAnalysis.strengths,
-            issues: currentAnalysis.improvements,
-            scores: scores
+            improvements: currentAnalysis.improvements,
+            nextSteps: currentAnalysis.nextSteps,
+            summary: currentAnalysis.summary,
+            why: why.isEmpty ? currentAnalysis.why : why,
+            comparison: snapshot
+        )
+        return presentation(
+            from: snapshot,
+            analysis: analysis,
+            previousBakeName: previous?.bake.name
         )
     }
 
@@ -162,131 +189,97 @@ enum LoafComparisonEngine {
         )
     }
 
-    static func makeScoreDeltas(current: LoafScoreSnapshot, previous: LoafScoreSnapshot) -> [DimensionDelta] {
+    static func makeScoreDeltas(current: LoafScoreSnapshot, previous: LoafScoreSnapshot) -> [ScoreDeltaSnapshot] {
         [
-            scoreDelta(label: "Crumb", current: current.crumbScore, previous: previous.crumbScore),
-            scoreDelta(label: "Crust", current: current.crustScore, previous: previous.crustScore),
-            scoreDelta(label: "Oven spring", current: current.ovenSpringScore, previous: previous.ovenSpringScore),
-            scoreDelta(label: "Overall", current: current.overallScore, previous: previous.overallScore),
+            scoreDelta(dimension: "crumb", current: current.crumbScore, previous: previous.crumbScore),
+            scoreDelta(dimension: "crust", current: current.crustScore, previous: previous.crustScore),
+            scoreDelta(dimension: "oven_spring", current: current.ovenSpringScore, previous: previous.ovenSpringScore),
+            scoreDelta(dimension: "overall", current: current.overallScore, previous: previous.overallScore),
         ]
     }
 
-    static func makeProcessDeltas(current: BakeProcessSnapshot, previous: BakeProcessSnapshot) -> [DimensionDelta] {
-        var deltas: [DimensionDelta] = []
+    static func makeProcessDeltas(current: BakeProcessSnapshot, previous: BakeProcessSnapshot) -> [ProcessDeltaSnapshot] {
+        var deltas: [ProcessDeltaSnapshot] = []
         deltas.append(
             processDelta(
-                label: "Hydration",
+                dimension: "hydration",
                 current: current.doughHydrationPercent,
                 previous: previous.doughHydrationPercent,
-                unit: "%",
-                unchangedWithin: LoafComparisonThresholds.hydrationPercent,
-                format: { String(format: "%.0f%%", $0) }
+                unchangedWithin: LoafComparisonThresholds.hydrationPercent
             )
         )
         deltas.append(
             processDelta(
-                label: "Bulk fermentation",
+                dimension: "bulk_fermentation",
                 current: Double(current.bulkFermentationMinutes),
                 previous: Double(previous.bulkFermentationMinutes),
-                unit: "min",
-                unchangedWithin: Double(LoafComparisonThresholds.minutes),
-                format: { "\(Int($0)) min" }
+                unchangedWithin: Double(LoafComparisonThresholds.minutes)
             )
         )
         deltas.append(
             processDelta(
-                label: "Final proof",
+                dimension: "final_proof",
                 current: Double(current.finalProofMinutes),
                 previous: Double(previous.finalProofMinutes),
-                unit: "min",
-                unchangedWithin: Double(LoafComparisonThresholds.minutes),
-                format: { "\(Int($0)) min" }
+                unchangedWithin: Double(LoafComparisonThresholds.minutes)
             )
         )
         if let currentTemp = current.fermentationTemperatureCelsius,
            let previousTemp = previous.fermentationTemperatureCelsius {
             deltas.append(
                 processDelta(
-                    label: "Fermentation temp",
+                    dimension: "fermentation_temperature",
                     current: currentTemp,
                     previous: previousTemp,
-                    unit: "°C",
-                    unchangedWithin: LoafComparisonThresholds.temperatureCelsius,
-                    format: { String(format: "%.0f°C", $0) }
+                    unchangedWithin: LoafComparisonThresholds.temperatureCelsius
                 )
             )
         }
         deltas.append(
             processDelta(
-                label: "Oven temperature",
+                dimension: "oven_temperature",
                 current: current.ovenTemperatureCelsius,
                 previous: previous.ovenTemperatureCelsius,
-                unit: "°C",
-                unchangedWithin: LoafComparisonThresholds.temperatureCelsius,
-                format: { String(format: "%.0f°C", $0) }
+                unchangedWithin: LoafComparisonThresholds.temperatureCelsius
             )
         )
         deltas.append(
             processDelta(
-                label: "Bake time",
+                dimension: "bake_time",
                 current: Double(current.bakingTimeMinutes),
                 previous: Double(previous.bakingTimeMinutes),
-                unit: "min",
-                unchangedWithin: Double(LoafComparisonThresholds.minutes),
-                format: { "\(Int($0)) min" }
+                unchangedWithin: Double(LoafComparisonThresholds.minutes)
             )
         )
         return deltas
     }
 
-    private static func scoreDelta(label: String, current: Int, previous: Int) -> DimensionDelta {
-        let trend = classifyScoreDelta(current: current, previous: previous)
-        let delta = current - previous
-        let deltaDisplay: String?
-        if trend == .unchanged {
-            deltaDisplay = nil
-        } else {
-            deltaDisplay = delta > 0 ? "+\(delta)" : "\(delta)"
-        }
-        return DimensionDelta(
-            label: label,
-            previousDisplay: "\(previous)",
-            currentDisplay: "\(current)",
-            trend: trend,
-            deltaDisplay: deltaDisplay
+    private static func scoreDelta(dimension: String, current: Int, previous: Int) -> ScoreDeltaSnapshot {
+        ScoreDeltaSnapshot(
+            dimension: dimension,
+            previous: previous,
+            current: current,
+            delta: current - previous,
+            classification: classifyScoreDelta(current: current, previous: previous)
         )
     }
 
     private static func processDelta(
-        label: String,
+        dimension: String,
         current: Double,
         previous: Double,
-        unit: String,
-        unchangedWithin: Double,
-        format: (Double) -> String
-    ) -> DimensionDelta {
-        let trend = classifyNumericDelta(
-            current: current,
+        unchangedWithin: Double
+    ) -> ProcessDeltaSnapshot {
+        ProcessDeltaSnapshot(
+            dimension: dimension,
             previous: previous,
-            unchangedWithin: unchangedWithin
-        )
-        let delta = current - previous
-        let deltaDisplay: String?
-        if trend == .unchanged {
-            deltaDisplay = nil
-        } else if unit == "%" {
-            deltaDisplay = String(format: "%+.0f%%", delta)
-        } else if unit == "°C" {
-            deltaDisplay = String(format: "%+.0f°C", delta)
-        } else {
-            deltaDisplay = String(format: "%+.0f %@", delta, unit)
-        }
-        return DimensionDelta(
-            label: label,
-            previousDisplay: format(previous),
-            currentDisplay: format(current),
-            trend: trend,
-            deltaDisplay: deltaDisplay
+            current: current,
+            delta: current - previous,
+            change: classifyProcessDelta(
+                current: current,
+                previous: previous,
+                unchangedWithin: unchangedWithin
+            )
         )
     }
 }

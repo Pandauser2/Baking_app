@@ -45,6 +45,8 @@ struct LoafAIAnalysis: Codable, Equatable {
     let summary: String
     /// AI explanation of differences / baseline context. Never invents process values.
     let why: String
+    /// Stable comparison snapshot persisted with the analysis (Phase C2.1).
+    let comparison: LoafComparisonSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case crumbScore = "crumb_score"
@@ -56,6 +58,7 @@ struct LoafAIAnalysis: Codable, Equatable {
         case nextSteps = "next_steps"
         case summary
         case why
+        case comparison
     }
 
     init(
@@ -67,7 +70,8 @@ struct LoafAIAnalysis: Codable, Equatable {
         improvements: [String],
         nextSteps: [String],
         summary: String,
-        why: String = ""
+        why: String = "",
+        comparison: LoafComparisonSnapshot? = nil
     ) {
         self.crumbScore = crumbScore
         self.crustScore = crustScore
@@ -78,6 +82,7 @@ struct LoafAIAnalysis: Codable, Equatable {
         self.nextSteps = nextSteps
         self.summary = summary
         self.why = why
+        self.comparison = comparison
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +96,22 @@ struct LoafAIAnalysis: Codable, Equatable {
         nextSteps = try container.decode([String].self, forKey: .nextSteps)
         summary = try container.decode(String.self, forKey: .summary)
         why = try container.decodeIfPresent(String.self, forKey: .why) ?? ""
+        comparison = try container.decodeIfPresent(LoafComparisonSnapshot.self, forKey: .comparison)
+    }
+
+    func encodingWithComparison(_ snapshot: LoafComparisonSnapshot) -> LoafAIAnalysis {
+        LoafAIAnalysis(
+            crumbScore: crumbScore,
+            crustScore: crustScore,
+            ovenSpringScore: ovenSpringScore,
+            overallScore: overallScore,
+            strengths: strengths,
+            improvements: improvements,
+            nextSteps: nextSteps,
+            summary: summary,
+            why: why,
+            comparison: snapshot
+        )
     }
 
     var confidence: Double {
@@ -98,7 +119,9 @@ struct LoafAIAnalysis: Codable, Equatable {
     }
 
     var recommendation: String {
-        nextSteps.first ?? ""
+        comparison?.recommendation.isEmpty == false
+            ? (comparison?.recommendation ?? nextSteps.first ?? "")
+            : (nextSteps.first ?? "")
     }
 }
 

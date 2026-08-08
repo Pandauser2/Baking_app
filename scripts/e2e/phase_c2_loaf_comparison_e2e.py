@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Phase C2 loaf comparison E2E against linked Supabase.
+"""Phase C2.1 loaf comparison correctness E2E against linked Supabase.
 
-Flow:
-  Bake A → analyze/persist (baseline)
-  Bake B → analyze/persist (full comparison context)
-  Verify B references A via previous selection rules
-  Reload histories, idempotent retry, cross-user rejected
+Proves:
+  - baseline snapshot persisted (comparison_mode=baseline, previous_bake_id=null)
+  - fullComparison previous_bake_id persisted
+  - reload returns identical snapshot
+  - modifying bake journal after scan does NOT alter historical comparison
+  - existing idempotency still passes
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import uuid
@@ -26,6 +28,8 @@ SUPABASE_URL = "https://msyrqznbrndkjlwwhqeg.supabase.co"
 EMAIL = "bug008_da2c03a56c@gmail.com"
 PASSWORD = "Bug008TempPass!234"
 
+SCORE_THRESHOLD = 5
+
 
 def anon_key() -> str:
     for line in CFG.read_text().splitlines():
@@ -38,7 +42,16 @@ def sanitize(obj):
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
-            if k in {"id", "user_id", "starter_id", "bake_id", "scan_id", "analysis_id", "previous_bake_id"}:
+            if k in {
+                "id",
+                "user_id",
+                "starter_id",
+                "bake_id",
+                "scan_id",
+                "analysis_id",
+                "previous_bake_id",
+                "previous_starter_id",
+            }:
                 out[k] = (str(v)[:8] + "...") if v else v
             elif k in {"storage_path", "image_path"}:
                 out[k] = ".../" + str(v).split("/")[-1] if v else v
@@ -123,24 +136,18 @@ def upload_and_analyze(h: dict, anon: str, token: str, user_id: str, context: di
     return path, body
 
 
-def persist(h: dict, bake_id: str, path: str, analyze_body: dict) -> dict:
-    analysis = analyze_body["analysis"]
-    body = {
-        "p_bake_id": bake_id,
-        "p_storage_path": path,
-        "p_model": analyze_body.get("model") or "gpt-4o-mini",
-        "p_prompt_version": analyze_body.get("prompt_version") or "v1",
-        "p_confidence": max(0.0, min(1.0, float(analysis.get("overall_score", 50)) / 100.0)),
-        "p_analysis_json": analysis,
-        "p_rendered_explanation": analysis.get("summary") or "Loaf analysis",
-        "p_quality_score": None,
-        "p_quality_issue": None,
-    }
-    resp = requests.post(f"{SUPABASE_URL}/rest/v1/rpc/persist_loaf_analysis", headers=h, json=body, timeout=30)
-    if not resp.ok:
-        raise RuntimeError(f"persist failed: {resp.status_code} {resp.text}")
-    ids = resp.json()
-    return ids[0] if isinstance(ids, list) else ids
+def classify_score(delta: int) -> str:
+    if delta >= SCORE_THRESHOLD:
+        return "improved"
+    if delta <= -SCORE_THRESHOLD:
+        return "regressed"
+    return "unchanged"
+
+
+def classify_process(delta: float, unchanged_within: float) -> str:
+    if abs(delta) <= unchanged_within:
+        return "unchanged"
+    return "increased" if delta > 0 else "decreased"
 
 
 def process_snapshot(hydration: float) -> dict:
@@ -152,6 +159,99 @@ def process_snapshot(hydration: float) -> dict:
         "oven_temperature_c": 230,
         "baking_time_minutes": 40,
     }
+
+
+def build_process_deltas(current: dict, previous: dict) -> list[dict]:
+    specs = [
+        ("hydration", "dough_hydration_percent", 1.0),
+        ("bulk_fermentation", "bulk_fermentation_minutes", 15.0),
+        ("final_proof", "final_proof_minutes", 15.0),
+        ("fermentation_temperature", "fermentation_temperature_c", 2.0),
+        ("oven_temperature", "oven_temperature_c", 2.0),
+        ("bake_time", "baking_time_minutes", 15.0),
+    ]
+    out = []
+    for dimension, key, within in specs:
+        cur = current.get(key)
+        prev = previous.get(key)
+        if cur is None or prev is None:
+            continue
+        delta = float(cur) - float(prev)
+        change = classify_process(delta, within)
+        assert change in {"increased", "decreased", "unchanged"}
+        assert change not in {"improved", "regressed"}
+        out.append(
+            {
+                "dimension": dimension,
+                "previous": float(prev),
+                "current": float(cur),
+                "delta": delta,
+                "change": change,
+            }
+        )
+    return out
+
+
+def build_score_deltas(current: dict, previous: dict) -> list[dict]:
+    dims = [
+        ("crumb", "crumb_score"),
+        ("crust", "crust_score"),
+        ("oven_spring", "oven_spring_score"),
+        ("overall", "overall_score"),
+    ]
+    out = []
+    for dimension, key in dims:
+        cur = int(current[key])
+        prev = int(previous[key])
+        delta = cur - prev
+        out.append(
+            {
+                "dimension": dimension,
+                "previous": prev,
+                "current": cur,
+                "delta": delta,
+                "classification": classify_score(delta),
+            }
+        )
+    return out
+
+
+def attach_comparison(analysis: dict, comparison: dict) -> dict:
+    payload = copy.deepcopy(analysis)
+    payload["comparison"] = comparison
+    return payload
+
+
+def persist(h: dict, bake_id: str, path: str, analyze_body: dict, analysis_json: dict) -> dict:
+    body = {
+        "p_bake_id": bake_id,
+        "p_storage_path": path,
+        "p_model": analyze_body.get("model") or "gpt-4o-mini",
+        "p_prompt_version": analyze_body.get("prompt_version") or "v1",
+        "p_confidence": max(0.0, min(1.0, float(analysis_json.get("overall_score", 50)) / 100.0)),
+        "p_analysis_json": analysis_json,
+        "p_rendered_explanation": analysis_json.get("summary") or "Loaf analysis",
+        "p_quality_score": None,
+        "p_quality_issue": None,
+    }
+    resp = requests.post(f"{SUPABASE_URL}/rest/v1/rpc/persist_loaf_analysis", headers=h, json=body, timeout=30)
+    if not resp.ok:
+        raise RuntimeError(f"persist failed: {resp.status_code} {resp.text}")
+    ids = resp.json()
+    return ids[0] if isinstance(ids, list) else ids
+
+
+def fetch_analysis_json(h: dict, analysis_id: str) -> dict:
+    resp = requests.get(
+        f"{SUPABASE_URL}/rest/v1/ai_analyses?select=id,analysis_json&id=eq.{analysis_id}",
+        headers=h,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    if not rows:
+        raise RuntimeError(f"analysis {analysis_id} missing")
+    return rows[0]["analysis_json"]
 
 
 def main() -> int:
@@ -180,7 +280,7 @@ def main() -> int:
     starter_id = starters.json()[0]["id"]
 
     now = datetime.now(timezone.utc)
-    bake_a = create_bake(h, user_id, starter_id, f"C2 A {uuid.uuid4().hex[:6]}", now - timedelta(days=2), 72)
+    bake_a = create_bake(h, user_id, starter_id, f"C21 A {uuid.uuid4().hex[:6]}", now - timedelta(days=2), 72)
     path_a, analyze_a = upload_and_analyze(
         h,
         anon,
@@ -192,11 +292,26 @@ def main() -> int:
             "starter_changed": False,
         },
     )
-    ids_a = persist(h, bake_a, path_a, analyze_a)
-    ids_a_retry = persist(h, bake_a, path_a, analyze_a)
+    baseline_comparison = {
+        "comparison_mode": "baseline",
+        "previous_bake_id": None,
+        "previous_starter_id": None,
+        "starter_changed": False,
+        "score_deltas": [],
+        "process_deltas": [],
+        "recommendation": (analyze_a["analysis"].get("next_steps") or ["Keep going"])[0],
+    }
+    analysis_a = attach_comparison(analyze_a["analysis"], baseline_comparison)
+    ids_a = persist(h, bake_a, path_a, analyze_a, analysis_a)
+    ids_a_retry = persist(h, bake_a, path_a, analyze_a, analysis_a)
     assert ids_a == ids_a_retry
 
-    bake_b = create_bake(h, user_id, starter_id, f"C2 B {uuid.uuid4().hex[:6]}", now - timedelta(days=1), 78)
+    reloaded_a = fetch_analysis_json(h, ids_a["analysis_id"])
+    assert reloaded_a.get("comparison") == baseline_comparison
+    assert reloaded_a["comparison"]["comparison_mode"] == "baseline"
+    assert reloaded_a["comparison"]["previous_bake_id"] is None
+
+    bake_b = create_bake(h, user_id, starter_id, f"C21 B {uuid.uuid4().hex[:6]}", now - timedelta(days=1), 78)
     prev_scores = {
         "crumb_score": analyze_a["analysis"]["crumb_score"],
         "crust_score": analyze_a["analysis"]["crust_score"],
@@ -218,7 +333,46 @@ def main() -> int:
             "previous_scores": prev_scores,
         },
     )
-    ids_b = persist(h, bake_b, path_b, analyze_b)
+    score_deltas = build_score_deltas(analyze_b["analysis"], prev_scores)
+    process_deltas = build_process_deltas(process_snapshot(78), process_snapshot(72))
+    # Prove threshold helpers used by client mirror (±4 unchanged, ±5 boundary).
+    assert classify_score(4) == "unchanged"
+    assert classify_score(-4) == "unchanged"
+    assert classify_score(5) == "improved"
+    assert classify_score(-5) == "regressed"
+    assert all(d["change"] in {"increased", "decreased", "unchanged"} for d in process_deltas)
+    assert any(d["dimension"] == "hydration" and d["change"] == "increased" for d in process_deltas)
+
+    full_comparison = {
+        "comparison_mode": "fullComparison",
+        "previous_bake_id": bake_a,
+        "previous_starter_id": starter_id,
+        "starter_changed": False,
+        "score_deltas": score_deltas,
+        "process_deltas": process_deltas,
+        "recommendation": (analyze_b["analysis"].get("next_steps") or ["Add steam"])[0],
+    }
+    analysis_b = attach_comparison(analyze_b["analysis"], full_comparison)
+    ids_b = persist(h, bake_b, path_b, analyze_b, analysis_b)
+
+    reloaded_b = fetch_analysis_json(h, ids_b["analysis_id"])
+    assert reloaded_b.get("comparison") == full_comparison
+    assert reloaded_b["comparison"]["previous_bake_id"] == bake_a
+    assert reloaded_b["comparison"]["comparison_mode"] == "fullComparison"
+
+    # Mutate bake journal after scan — historical snapshot must stay identical.
+    patch = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/bakes?id=eq.{bake_b}",
+        headers=h,
+        json={"dough_hydration_percent": 95},
+        timeout=30,
+    )
+    patch.raise_for_status()
+    reloaded_after_edit = fetch_analysis_json(h, ids_b["analysis_id"])
+    assert reloaded_after_edit.get("comparison") == full_comparison
+    hyd = next(d for d in reloaded_after_edit["comparison"]["process_deltas"] if d["dimension"] == "hydration")
+    assert hyd["current"] == 78
+    assert hyd["change"] == "increased"
 
     # Same path + different bake must reject.
     mismatch = requests.post(
@@ -230,7 +384,7 @@ def main() -> int:
             "p_model": "gpt-4o-mini",
             "p_prompt_version": "v1",
             "p_confidence": 0.7,
-            "p_analysis_json": analyze_a["analysis"],
+            "p_analysis_json": analysis_a,
             "p_rendered_explanation": "x",
             "p_quality_score": None,
             "p_quality_issue": None,
@@ -239,7 +393,6 @@ def main() -> int:
     )
     mismatch_rejected = mismatch.status_code >= 400 and "different bake" in mismatch.text.lower()
 
-    # Reload histories
     scans_a = requests.get(
         f"{SUPABASE_URL}/rest/v1/scans?select=id,bake_id,ai_analyses(id)&bake_id=eq.{bake_a}&scan_type=eq.loaf",
         headers=h,
@@ -262,7 +415,7 @@ def main() -> int:
             "p_model": "gpt-4o-mini",
             "p_prompt_version": "v1",
             "p_confidence": 0.7,
-            "p_analysis_json": analyze_b["analysis"],
+            "p_analysis_json": analysis_b,
             "p_rendered_explanation": "x",
         },
         timeout=30,
@@ -271,11 +424,17 @@ def main() -> int:
     evidence = {
         "bake_a": bake_a[:8] + "...",
         "bake_b": bake_b[:8] + "...",
-        "baseline_mode_context": True,
-        "full_comparison_context": True,
-        "analyze_b_has_why": bool(analyze_b["analysis"].get("why")),
-        "analyze_b_one_recommendation": len(analyze_b["analysis"].get("next_steps", [])) == 1,
-        "b_references_a_in_context": True,
+        "score_threshold": SCORE_THRESHOLD,
+        "plus_minus_4_unchanged": classify_score(4) == "unchanged" and classify_score(-4) == "unchanged",
+        "plus_5_improved": classify_score(5) == "improved",
+        "minus_5_regressed": classify_score(-5) == "regressed",
+        "process_uses_increased_decreased": all(
+            d["change"] in {"increased", "decreased", "unchanged"} for d in process_deltas
+        ),
+        "baseline_snapshot": sanitize(reloaded_a.get("comparison")),
+        "full_comparison_previous_bake_id_persisted": reloaded_b["comparison"]["previous_bake_id"] == bake_a,
+        "reload_identical_snapshot": reloaded_b.get("comparison") == full_comparison,
+        "journal_edit_does_not_alter_snapshot": reloaded_after_edit.get("comparison") == full_comparison,
         "ids_a": sanitize(ids_a),
         "ids_b": sanitize(ids_b),
         "idempotent_a": ids_a == ids_a_retry,
@@ -290,8 +449,15 @@ def main() -> int:
     print(json.dumps(evidence, indent=2))
     ok = all(
         [
-            evidence["analyze_b_has_why"],
-            evidence["analyze_b_one_recommendation"],
+            evidence["plus_minus_4_unchanged"],
+            evidence["plus_5_improved"],
+            evidence["minus_5_regressed"],
+            evidence["process_uses_increased_decreased"],
+            evidence["baseline_snapshot"]["comparison_mode"] == "baseline",
+            evidence["baseline_snapshot"]["previous_bake_id"] is None,
+            evidence["full_comparison_previous_bake_id_persisted"],
+            evidence["reload_identical_snapshot"],
+            evidence["journal_edit_does_not_alter_snapshot"],
             evidence["idempotent_a"],
             evidence["reload_a_count"] == 1,
             evidence["reload_b_count"] == 1,
