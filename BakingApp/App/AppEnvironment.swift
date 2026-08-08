@@ -165,9 +165,23 @@ private struct NoopAnalyticsTracker: AnalyticsTracking {
 
 private struct NoopLoafAnalysisRepository: LoafAnalysisRepository {
     func uploadImage(_ data: Data, userID: UUID) async throws -> String { throw AppError.configuration("Configuration missing") }
-    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafScan { throw AppError.configuration("Configuration missing") }
+    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafAnalyzeResult {
+        throw AppError.configuration("Configuration missing")
+    }
+    func persistLoafAnalysis(
+        bakeID: UUID,
+        imagePath: String,
+        result: LoafAnalyzeResult,
+        qualityScore: Double?,
+        qualityIssue: String?
+    ) async throws -> PersistedLoafAnalysisIDs {
+        throw AppError.configuration("Configuration missing")
+    }
     func fetchHistory() async throws -> [LoafScan] { [] }
-    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL { throw AppError.configuration("Configuration missing") }
+    func fetchLoafAnalyses(forBakeID bakeID: UUID) async throws -> [CanonicalLoafAnalysis] { [] }
+    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        throw AppError.configuration("Configuration missing")
+    }
 }
 
 private struct NoopStarterRepository: StarterRepository {

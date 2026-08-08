@@ -46,7 +46,7 @@ struct AnalysisView: View {
         .navigationDestination(isPresented: $shouldShowResult) {
             if let result = viewModel.latestResult {
                 AnalysisResultView(
-                    scan: result,
+                    result: result,
                     imagePath: viewModel.latestImagePath,
                     viewModel: viewModel
                 )
@@ -110,7 +110,12 @@ struct AnalysisView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(viewModel.selectedImage == nil || viewModel.isUploading || viewModel.isAnalyzing)
+            .disabled(
+                viewModel.selectedImage == nil
+                    || viewModel.isUploading
+                    || viewModel.isAnalyzing
+                    || viewModel.isPersisting
+            )
 
             Button("History") {
                 shouldShowHistory = true

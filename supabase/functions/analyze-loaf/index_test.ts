@@ -1,5 +1,15 @@
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { validateAiPayload } from "./index.ts";
+import { PERFORMS_DB_WRITES, validateAiPayload } from "./index.ts";
+
+Deno.test("analyze-loaf performs zero DB writes", async () => {
+  assertEquals(PERFORMS_DB_WRITES, false);
+  const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  assertEquals(source.includes('.from("loaf_scans")'), false);
+  assertEquals(source.includes(".insert("), false);
+  assertEquals(source.includes(".upsert("), false);
+  assertEquals(source.includes(".update("), false);
+  assertEquals(source.includes(".delete("), false);
+});
 
 Deno.test("validateAiPayload accepts valid payload", () => {
   const payload = validateAiPayload({
@@ -33,4 +43,3 @@ Deno.test("validateAiPayload rejects malformed payload", () => {
     Error,
   );
 });
-

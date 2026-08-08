@@ -7,14 +7,18 @@ import UniformTypeIdentifiers
 final class AnalysisViewModel: ObservableObject {
     @Published var selectedImage: UIImage?
     @Published var selectedItem: PhotosPickerItem?
-    @Published var latestResult: LoafScan?
+    @Published var latestResult: LoafAnalyzeResult?
+    @Published var latestPersistedIDs: PersistedLoafAnalysisIDs?
+    @Published var bakeAnalyses: [CanonicalLoafAnalysis] = []
     @Published var history: [LoafScan] = []
     @Published var isUploading = false
     @Published var isAnalyzing = false
+    @Published var isPersisting = false
     @Published var progressMessage: String?
     @Published var errorMessage: String?
 
     private(set) var latestImagePath: String?
+    private let bakeID: UUID?
 
     private let repository: LoafAnalysisRepository
     private let validator: ImageValidator
@@ -22,10 +26,12 @@ final class AnalysisViewModel: ObservableObject {
 
     init(
         repository: LoafAnalysisRepository,
+        bakeID: UUID? = nil,
         validator: ImageValidator = ImageValidator(),
         analytics: AnalyticsTracking
     ) {
         self.repository = repository
+        self.bakeID = bakeID
         self.validator = validator
         self.analytics = analytics
     }
@@ -89,18 +95,35 @@ final class AnalysisViewModel: ObservableObject {
             let result = try await repository.analyzeLoaf(imagePath: imagePath, promptVersion: "v1")
             latestResult = result
             isAnalyzing = false
-            progressMessage = nil
             analytics.track(.analysisCompleted)
+
+            if let bakeID {
+                isPersisting = true
+                progressMessage = "Saving analysis..."
+                latestPersistedIDs = try await repository.persistLoafAnalysis(
+                    bakeID: bakeID,
+                    imagePath: imagePath,
+                    result: result,
+                    qualityScore: nil,
+                    qualityIssue: nil
+                )
+                bakeAnalyses = try await repository.fetchLoafAnalyses(forBakeID: bakeID)
+                isPersisting = false
+            }
+
+            progressMessage = nil
             errorMessage = nil
         } catch let appError as AppError {
             isUploading = false
             isAnalyzing = false
+            isPersisting = false
             progressMessage = nil
             errorMessage = appError.errorDescription
             analytics.track(.analysisFailed)
         } catch {
             isUploading = false
             isAnalyzing = false
+            isPersisting = false
             progressMessage = nil
             errorMessage = AppError.analysisFailed.errorDescription
             analytics.track(.analysisFailed)
@@ -110,6 +133,9 @@ final class AnalysisViewModel: ObservableObject {
     func loadHistory() async {
         do {
             history = try await repository.fetchHistory()
+            if let bakeID {
+                bakeAnalyses = try await repository.fetchLoafAnalyses(forBakeID: bakeID)
+            }
         } catch let appError as AppError {
             errorMessage = appError.errorDescription
         } catch {
@@ -125,4 +151,3 @@ final class AnalysisViewModel: ObservableObject {
         }
     }
 }
-

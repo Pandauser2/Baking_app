@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct AnalysisResultView: View {
-    let scan: LoafScan
+    let result: LoafAnalyzeResult
     let imagePath: String?
     @ObservedObject var viewModel: AnalysisViewModel
 
     @State private var signedURL: URL?
+
+    private var analysis: LoafAIAnalysis { result.analysis }
 
     var body: some View {
         ScrollView {
@@ -20,36 +22,35 @@ struct AnalysisResultView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
-                scoreRow("Overall", scan.overallScore)
-                scoreRow("Crumb", scan.crumbScore)
-                scoreRow("Crust", scan.crustScore)
-                scoreRow("Oven Spring", scan.ovenSpringScore)
+                scoreRow("Overall", analysis.overallScore)
+                scoreRow("Crumb", analysis.crumbScore)
+                scoreRow("Crust", analysis.crustScore)
+                scoreRow("Oven Spring", analysis.ovenSpringScore)
 
-                labeledList("Strengths", scan.strengths)
-                labeledList("Improvements", scan.improvements)
-                labeledList("Next Steps", scan.nextSteps)
+                labeledList("Strengths", analysis.strengths)
+                labeledList("Improvements", analysis.improvements)
+                labeledList("Next Steps", analysis.nextSteps)
 
-                if let summary = scan.aiSummary {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Summary").font(.headline)
-                        Text(summary)
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Summary").font(.headline)
+                    Text(analysis.summary)
                 }
             }
             .padding()
         }
         .navigationTitle("Analysis Result")
         .task {
-            let path = imagePath ?? scan.imagePath
-            signedURL = await viewModel.signedImageURL(path: path)
+            if let imagePath {
+                signedURL = await viewModel.signedImageURL(path: imagePath)
+            }
         }
     }
 
-    private func scoreRow(_ title: String, _ value: Int?) -> some View {
+    private func scoreRow(_ title: String, _ value: Int) -> some View {
         HStack {
             Text(title).font(.headline)
             Spacer()
-            Text(value.map(String.init) ?? "-")
+            Text(String(value))
         }
     }
 
@@ -67,4 +68,3 @@ struct AnalysisResultView: View {
         }
     }
 }
-

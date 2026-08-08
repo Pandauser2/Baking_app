@@ -6,7 +6,7 @@ type AnalyzeRequest = {
   prompt_version?: string;
 };
 
-type AiPayload = {
+export type AiPayload = {
   crumb_score: number;
   crust_score: number;
   oven_spring_score: number;
@@ -17,21 +17,8 @@ type AiPayload = {
   summary: string;
 };
 
-type LoafScanInsert = {
-  user_id: string;
-  image_path: string;
-  crumb_score: number;
-  crust_score: number;
-  oven_spring_score: number;
-  overall_score: number;
-  strengths: string[];
-  improvements: string[];
-  next_steps: string[];
-  ai_summary: string;
-  prompt_version: string;
-};
-
 const PROMPT_VERSION = "v1";
+const MODEL = "gpt-4o-mini";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -103,6 +90,9 @@ export function validateAiPayload(payload: unknown): AiPayload {
   };
 }
 
+/** Source marker used by tests: this module must never write analysis rows. */
+export const PERFORMS_DB_WRITES = false as const;
+
 function buildPrompt(): string {
   return [
     "You are a sourdough loaf evaluator.",
@@ -119,6 +109,9 @@ function buildPrompt(): string {
     '  "summary":""',
     "}",
     "All score fields are integers from 0 to 100.",
+    "summary must be a non-empty string (1-3 sentences).",
+    "strengths, improvements, and next_steps must each include at least one non-empty string.",
+    "If the image is unclear, still return best-effort scores and a short summary.",
     "Do not include any extra fields.",
   ].join("\n");
 }
@@ -132,7 +125,7 @@ async function callOpenAI(imageBytes: Uint8Array, apiKey: string): Promise<AiPay
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: MODEL,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -201,6 +194,8 @@ const handler = async (req: Request) => {
       return jsonResponse(401, { error: "Missing bearer token" });
     }
 
+    // Service role is used only for auth verification + storage download.
+    // This function must not insert/update/delete analysis rows.
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const jwt = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabase.auth.getUser(jwt);
@@ -230,32 +225,12 @@ const handler = async (req: Request) => {
       return jsonResponse(400, { error: "Image payload too large" });
     }
 
-    const aiPayload = await callOpenAI(imageBytes, openAIKey);
-    const row: LoafScanInsert = {
-      user_id: userId,
-      image_path: body.image_path,
-      crumb_score: aiPayload.crumb_score,
-      crust_score: aiPayload.crust_score,
-      oven_spring_score: aiPayload.oven_spring_score,
-      overall_score: aiPayload.overall_score,
-      strengths: aiPayload.strengths,
-      improvements: aiPayload.improvements,
-      next_steps: aiPayload.next_steps,
-      ai_summary: aiPayload.summary,
+    const analysis = await callOpenAI(imageBytes, openAIKey);
+    return jsonResponse(200, {
+      model: MODEL,
       prompt_version: body.prompt_version ?? PROMPT_VERSION,
-    };
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("loaf_scans")
-      .insert(row)
-      .select()
-      .single();
-
-    if (insertError || !inserted) {
-      return jsonResponse(500, { error: "Could not save analysis result" });
-    }
-
-    return jsonResponse(200, { scan: inserted });
+      analysis,
+    });
   } catch (error) {
     return jsonResponse(400, {
       error: error instanceof Error ? error.message : "Unexpected error",
@@ -266,4 +241,3 @@ const handler = async (req: Request) => {
 if (import.meta.main) {
   serve(handler);
 }
-
