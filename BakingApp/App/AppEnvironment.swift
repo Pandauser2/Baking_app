@@ -9,6 +9,7 @@ final class AppEnvironment: ObservableObject {
     let analytics: AnalyticsTracking
     let loafAnalysisRepository: LoafAnalysisRepository
     let starterRepository: StarterRepository
+    let bakeRepository: BakeRepository
 
     init(
         configResult: Result<AppConfig, AppConfigError>,
@@ -17,7 +18,8 @@ final class AppEnvironment: ObservableObject {
         onboardingStore: OnboardingStore,
         analytics: AnalyticsTracking,
         loafAnalysisRepository: LoafAnalysisRepository,
-        starterRepository: StarterRepository
+        starterRepository: StarterRepository,
+        bakeRepository: BakeRepository
     ) {
         self.configResult = configResult
         self.authManager = authManager
@@ -26,6 +28,7 @@ final class AppEnvironment: ObservableObject {
         self.analytics = analytics
         self.loafAnalysisRepository = loafAnalysisRepository
         self.starterRepository = starterRepository
+        self.bakeRepository = bakeRepository
     }
 
     static func live() -> AppEnvironment {
@@ -42,7 +45,8 @@ final class AppEnvironment: ObservableObject {
                 onboardingStore: OnboardingStore(),
                 analytics: NoopAnalyticsTracker(),
                 loafAnalysisRepository: NoopLoafAnalysisRepository(),
-                starterRepository: NoopStarterRepository()
+                starterRepository: NoopStarterRepository(),
+                bakeRepository: NoopBakeRepository()
             )
         }
 
@@ -80,6 +84,10 @@ final class AppEnvironment: ObservableObject {
                 supabaseURL: config.supabaseURL,
                 anonKey: config.supabaseAnonKey
             )
+            let bakeRepository = SupabaseBakeRepository(
+                supabaseURL: config.supabaseURL,
+                anonKey: config.supabaseAnonKey
+            )
             return AppEnvironment(
                 configResult: configResult,
                 authManager: authManager,
@@ -87,7 +95,8 @@ final class AppEnvironment: ObservableObject {
                 onboardingStore: OnboardingStore(),
                 analytics: analytics,
                 loafAnalysisRepository: loafAnalysisRepository,
-                starterRepository: starterRepository
+                starterRepository: starterRepository,
+                bakeRepository: bakeRepository
             )
         case .failure:
             let fallbackAuth = AuthManager(client: NoopAuthClient())
@@ -99,7 +108,8 @@ final class AppEnvironment: ObservableObject {
                 onboardingStore: OnboardingStore(),
                 analytics: NoopAnalyticsTracker(),
                 loafAnalysisRepository: NoopLoafAnalysisRepository(),
-                starterRepository: NoopStarterRepository()
+                starterRepository: NoopStarterRepository(),
+                bakeRepository: NoopBakeRepository()
             )
         }
     }
@@ -109,16 +119,20 @@ final class AppEnvironment: ObservableObject {
         defaults.set(true, forKey: "onboarding.completed")
         let authManager = AuthManager(client: UITestingAuthClient())
         let billingManager = BillingManager(client: NoopBillingClient())
+        let starterRepository = UITestingStarterRepository(
+            populatedTimeline: UITestingBootstrap.usesPopulatedTimeline
+        )
+        let bakeRepository = UITestingBakeRepository(starterRepository: starterRepository)
+        bakeRepository.seedForUITestingIfNeeded()
         return AppEnvironment(
             configResult: .failure(.missingValue("UI testing uses fixture repositories")),
             authManager: authManager,
             billingManager: billingManager,
             onboardingStore: OnboardingStore(defaults: defaults),
             analytics: NoopAnalyticsTracker(),
-            loafAnalysisRepository: NoopLoafAnalysisRepository(),
-            starterRepository: UITestingStarterRepository(
-                populatedTimeline: UITestingBootstrap.usesPopulatedTimeline
-            )
+            loafAnalysisRepository: UITestingLoafAnalysisRepository(bakeRepository: bakeRepository),
+            starterRepository: starterRepository,
+            bakeRepository: bakeRepository
         )
     }
 }
@@ -153,9 +167,27 @@ private struct NoopAnalyticsTracker: AnalyticsTracking {
 
 private struct NoopLoafAnalysisRepository: LoafAnalysisRepository {
     func uploadImage(_ data: Data, userID: UUID) async throws -> String { throw AppError.configuration("Configuration missing") }
-    func analyzeLoaf(imagePath: String, promptVersion: String) async throws -> LoafScan { throw AppError.configuration("Configuration missing") }
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String,
+        context: LoafAnalyzeContext?
+    ) async throws -> LoafAnalyzeResult {
+        throw AppError.configuration("Configuration missing")
+    }
+    func persistLoafAnalysis(
+        bakeID: UUID,
+        imagePath: String,
+        result: LoafAnalyzeResult,
+        qualityScore: Double?,
+        qualityIssue: String?
+    ) async throws -> PersistedLoafAnalysisIDs {
+        throw AppError.configuration("Configuration missing")
+    }
     func fetchHistory() async throws -> [LoafScan] { [] }
-    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL { throw AppError.configuration("Configuration missing") }
+    func fetchLoafAnalyses(forBakeID bakeID: UUID) async throws -> [CanonicalLoafAnalysis] { [] }
+    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        throw AppError.configuration("Configuration missing")
+    }
 }
 
 private struct NoopStarterRepository: StarterRepository {
@@ -189,6 +221,16 @@ private struct NoopStarterRepository: StarterRepository {
         throw AppError.configuration("Configuration missing")
     }
     func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        throw AppError.configuration("Configuration missing")
+    }
+}
+
+private struct NoopBakeRepository: BakeRepository {
+    func listBakes() async throws -> [Bake] { [] }
+    func fetchBake(bakeID: UUID) async throws -> Bake {
+        throw AppError.configuration("Configuration missing")
+    }
+    func createBake(_ input: BakeCreateInput) async throws -> Bake {
         throw AppError.configuration("Configuration missing")
     }
 }

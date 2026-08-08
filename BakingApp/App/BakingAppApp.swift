@@ -33,6 +33,7 @@ struct RootView: View {
     /// Stable owners — must not be recreated when auth/billing republish.
     @StateObject private var homeRouter = HomeNavigationRouter()
     @StateObject private var homeViewModelHolder = HomeViewModelHolder()
+    @StateObject private var bakeJournalViewModelHolder = BakeJournalViewModelHolder()
 
     var body: some View {
         let route = AppRouter.route(for: authManager.status, onboardingCompleted: onboardingStore.isCompleted)
@@ -79,7 +80,11 @@ struct RootView: View {
             analytics: environment.analytics,
             isProUser: billingManager.hasProEntitlement
         )
-        HomeView(viewModel: viewModel)
+        let bakeJournalViewModel = bakeJournalViewModelHolder.viewModel(
+            bakeRepository: environment.bakeRepository,
+            starterRepository: environment.starterRepository
+        )
+        HomeView(viewModel: viewModel, bakeJournalViewModel: bakeJournalViewModel)
             .environmentObject(homeRouter)
     }
 }

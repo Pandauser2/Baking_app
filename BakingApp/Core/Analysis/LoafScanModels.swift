@@ -1,5 +1,6 @@
 import Foundation
 
+/// Legacy Phase B score-card row from `public.loaf_scans` (read-only for history).
 struct LoafScan: Codable, Equatable, Identifiable {
     let id: UUID
     let userID: UUID
@@ -32,13 +33,198 @@ struct LoafScan: Codable, Equatable, Identifiable {
     }
 }
 
+struct LoafAIAnalysis: Codable, Equatable {
+    let crumbScore: Int
+    let crustScore: Int
+    let ovenSpringScore: Int
+    let overallScore: Int
+    let strengths: [String]
+    let improvements: [String]
+    /// Exactly one highest-impact recommendation for the next bake (Phase C2).
+    let nextSteps: [String]
+    let summary: String
+    /// AI explanation of differences / baseline context. Never invents process values.
+    let why: String
+    /// Stable comparison snapshot persisted with the analysis (Phase C2.1).
+    let comparison: LoafComparisonSnapshot?
+
+    enum CodingKeys: String, CodingKey {
+        case crumbScore = "crumb_score"
+        case crustScore = "crust_score"
+        case ovenSpringScore = "oven_spring_score"
+        case overallScore = "overall_score"
+        case strengths
+        case improvements
+        case nextSteps = "next_steps"
+        case summary
+        case why
+        case comparison
+    }
+
+    init(
+        crumbScore: Int,
+        crustScore: Int,
+        ovenSpringScore: Int,
+        overallScore: Int,
+        strengths: [String],
+        improvements: [String],
+        nextSteps: [String],
+        summary: String,
+        why: String = "",
+        comparison: LoafComparisonSnapshot? = nil
+    ) {
+        self.crumbScore = crumbScore
+        self.crustScore = crustScore
+        self.ovenSpringScore = ovenSpringScore
+        self.overallScore = overallScore
+        self.strengths = strengths
+        self.improvements = improvements
+        self.nextSteps = nextSteps
+        self.summary = summary
+        self.why = why
+        self.comparison = comparison
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        crumbScore = try container.decode(Int.self, forKey: .crumbScore)
+        crustScore = try container.decode(Int.self, forKey: .crustScore)
+        ovenSpringScore = try container.decode(Int.self, forKey: .ovenSpringScore)
+        overallScore = try container.decode(Int.self, forKey: .overallScore)
+        strengths = try container.decode([String].self, forKey: .strengths)
+        improvements = try container.decode([String].self, forKey: .improvements)
+        nextSteps = try container.decode([String].self, forKey: .nextSteps)
+        summary = try container.decode(String.self, forKey: .summary)
+        why = try container.decodeIfPresent(String.self, forKey: .why) ?? ""
+        comparison = try container.decodeIfPresent(LoafComparisonSnapshot.self, forKey: .comparison)
+    }
+
+    func encodingWithComparison(_ snapshot: LoafComparisonSnapshot) -> LoafAIAnalysis {
+        LoafAIAnalysis(
+            crumbScore: crumbScore,
+            crustScore: crustScore,
+            ovenSpringScore: ovenSpringScore,
+            overallScore: overallScore,
+            strengths: strengths,
+            improvements: improvements,
+            nextSteps: nextSteps,
+            summary: summary,
+            why: why,
+            comparison: snapshot
+        )
+    }
+
+    var confidence: Double {
+        Double(overallScore) / 100.0
+    }
+
+    var recommendation: String {
+        comparison?.recommendation.isEmpty == false
+            ? (comparison?.recommendation ?? nextSteps.first ?? "")
+            : (nextSteps.first ?? "")
+    }
+}
+
+struct LoafAnalyzeResult: Codable, Equatable {
+    let model: String
+    let promptVersion: String
+    let analysis: LoafAIAnalysis
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case promptVersion = "prompt_version"
+        case analysis
+    }
+}
+
+struct PersistedLoafAnalysisIDs: Codable, Equatable {
+    let scanID: UUID
+    let analysisID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case scanID = "scan_id"
+        case analysisID = "analysis_id"
+    }
+}
+
+struct CanonicalLoafAnalysis: Equatable, Identifiable {
+    var id: UUID { scanID }
+    let scanID: UUID
+    let analysisID: UUID
+    let bakeID: UUID?
+    let storagePath: String
+    let model: String
+    let promptVersion: String
+    let confidence: Double
+    let analysis: LoafAIAnalysis
+    let renderedExplanation: String
+    let createdAt: Date
+}
+
 struct AnalyzeLoafPayload: Codable, Equatable {
     let imagePath: String
     let promptVersion: String
+    let context: LoafAnalyzeContext?
 
     enum CodingKeys: String, CodingKey {
         case imagePath = "image_path"
         case promptVersion = "prompt_version"
+        case context
+    }
+}
+
+enum LoafPersistMismatchError: LocalizedError, Equatable {
+    case storagePathLinkedToDifferentBake
+
+    var errorDescription: String? {
+        switch self {
+        case .storagePathLinkedToDifferentBake:
+            return "This photo is already saved to a different bake."
+        }
+    }
+}
+
+struct PersistLoafAnalysisPayload: Codable, Equatable {
+    let bakeID: UUID
+    let storagePath: String
+    let model: String
+    let promptVersion: String
+    let confidence: Double
+    let analysisJSON: LoafAIAnalysis
+    let renderedExplanation: String
+    let qualityScore: Double?
+    let qualityIssue: String?
+
+    enum CodingKeys: String, CodingKey {
+        case bakeID = "p_bake_id"
+        case storagePath = "p_storage_path"
+        case model = "p_model"
+        case promptVersion = "p_prompt_version"
+        case confidence = "p_confidence"
+        case analysisJSON = "p_analysis_json"
+        case renderedExplanation = "p_rendered_explanation"
+        case qualityScore = "p_quality_score"
+        case qualityIssue = "p_quality_issue"
+    }
+}
+
+enum LoafAnalyzeResponseParser {
+    static func decode(_ data: Data) throws -> LoafAnalyzeResult {
+        try JSONDecoder().decode(LoafAnalyzeResult.self, from: data)
+    }
+}
+
+enum PersistLoafAnalysisResponseDecoder {
+    static func decodeIDs(_ data: Data) throws -> PersistedLoafAnalysisIDs {
+        let decoder = SupabaseJSONDecoder.make()
+        if let decoded = try? decoder.decode(PersistedLoafAnalysisIDs.self, from: data) {
+            return decoded
+        }
+        if let list = try? decoder.decode([PersistedLoafAnalysisIDs].self, from: data),
+           let first = list.first {
+            return first
+        }
+        throw AppError.malformedResponse
     }
 }
 
@@ -59,4 +245,3 @@ enum LoafScanParser {
         let scan: LoafScan
     }
 }
-

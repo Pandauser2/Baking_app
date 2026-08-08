@@ -7,6 +7,8 @@ struct HomeView: View {
     @EnvironmentObject private var router: HomeNavigationRouter
 
     @ObservedObject var viewModel: StarterWorkflowViewModel
+    @ObservedObject var bakeJournalViewModel: BakeJournalViewModel
+    @StateObject private var loafSession = LoafAnalysisSession()
     @State private var isShowingPaywall = false
     @State private var showCreateStarter = false
     @State private var hasLoadedHomeData = false
@@ -186,6 +188,57 @@ struct HomeView: View {
             } else {
                 missingStarterView(screen: "TimelineMissing")
             }
+        case .bakeJournal:
+            BakeJournalListView(viewModel: bakeJournalViewModel)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeJournalRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeJournal",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeJournal
+                )
+        case .bakeCreate:
+            BakeCreateView(viewModel: bakeJournalViewModel)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeCreateRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeCreate",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeCreate
+                )
+        case .bakeDetail(let bakeID):
+            BakeDetailView(viewModel: bakeJournalViewModel, bakeID: bakeID)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.bakeDetailRoot)
+                .homeBackToolbar(
+                    router: router,
+                    screen: "BakeDetail",
+                    accessibilityIdentifier: HomeNavigationAccessibilityID.backBakeDetail
+                )
+        case .scanLoaf(let bakeID):
+            AnalysisView(
+                viewModel: loafSession.viewModel(
+                    for: bakeID,
+                    environment: environment,
+                    isProUser: billingManager.hasProEntitlement
+                )
+            )
+            .homeBackToolbar(
+                router: router,
+                screen: "ScanLoaf",
+                accessibilityIdentifier: HomeNavigationAccessibilityID.backLoafScan
+            )
+        case .loafAnalysisResult(let bakeID):
+            LoafAnalysisResultHost(
+                viewModel: loafSession.viewModel(
+                    for: bakeID,
+                    environment: environment,
+                    isProUser: billingManager.hasProEntitlement
+                ),
+                onSaveBaseline: { router.pop(screen: "LoafAnalysisResult") }
+            )
+            .homeBackToolbar(
+                router: router,
+                screen: "LoafAnalysisResult",
+                accessibilityIdentifier: HomeNavigationAccessibilityID.backLoafAnalysisResult
+            )
         }
     }
 
@@ -238,6 +291,12 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppTheme.Colors.accent)
+
+                Button("Bake Journal") {
+                    router.push(.bakeJournal, screen: "Home")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.openBakeJournal)
             }
         }
     }
@@ -292,6 +351,12 @@ struct HomeView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(AppTheme.Colors.secondaryText)
                 .font(.footnote)
+
+                Button("Bake Journal") {
+                    router.push(.bakeJournal, screen: "Home")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(HomeNavigationAccessibilityID.openBakeJournal)
             }
         }
     }

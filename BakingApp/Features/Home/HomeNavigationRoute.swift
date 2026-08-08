@@ -9,10 +9,16 @@ enum HomeNavigationRoute: Hashable {
     case scanStarter(UUID)
     case analysisResult(UUID)
     case timeline(UUID)
+    case bakeJournal
+    case bakeCreate
+    case bakeDetail(UUID)
+    case scanLoaf(UUID)
+    case loafAnalysisResult(UUID)
 }
 
 enum HomeNavigationAccessibilityID {
     static let openStarterDetails = "home.openStarterDetails"
+    static let openBakeJournal = "home.openBakeJournal"
     static let workflowTimeline = "starter.workflow.timeline"
     static let workflowFeedingHistory = "starter.workflow.feedingHistory"
     static let workflowLogFeeding = "starter.workflow.logFeeding"
@@ -25,6 +31,20 @@ enum HomeNavigationAccessibilityID {
     static let scanRoot = "starter.scan.root"
     static let analysisResultRoot = "starter.analysisResult.root"
     static let starterListRoot = "starter.list.root"
+    static let bakeJournalRoot = "bake.journal.root"
+    static let bakeJournalEmpty = "bake.journal.empty"
+    static let bakeJournalAdd = "bake.journal.add"
+    static let bakeCreateRoot = "bake.create.root"
+    static let bakeCreateName = "bake.create.name"
+    static let bakeCreateRating = "bake.create.rating"
+    static let bakeCreateSave = "bake.create.save"
+    static let bakeCreateError = "bake.create.error"
+    static let bakeCreateStarterPicker = "bake.create.starterPicker"
+    static let bakeDetailRoot = "bake.detail.root"
+    static let loafScanRoot = "loaf.scan.root"
+    static let loafAnalysisResultRoot = "loaf.analysisResult.root"
+    static let bakeDetailScanLoaf = "bake.detail.scanLoaf"
+    static let bakeDetailViewAnalysis = "bake.detail.viewAnalysis"
 
     static let backStarterDetail = "nav.back.starterDetail"
     static let backTimeline = "nav.back.timeline"
@@ -33,4 +53,9 @@ enum HomeNavigationAccessibilityID {
     static let backScan = "nav.back.scan"
     static let backAnalysisResult = "nav.back.analysisResult"
     static let backStarterList = "nav.back.starterList"
+    static let backBakeJournal = "nav.back.bakeJournal"
+    static let backBakeCreate = "nav.back.bakeCreate"
+    static let backBakeDetail = "nav.back.bakeDetail"
+    static let backLoafScan = "nav.back.loafScan"
+    static let backLoafAnalysisResult = "nav.back.loafAnalysisResult"
 }

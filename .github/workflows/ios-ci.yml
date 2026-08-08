@@ -163,13 +163,16 @@ jobs:
       - name: Run Edge Function tests
         run: |
           set -euo pipefail
-          deno test supabase/functions/analyze-loaf/index_test.ts
+          deno test --allow-read supabase/functions/analyze-loaf/index_test.ts
           deno test supabase/functions/analyze-starter/index_test.ts
           deno test --allow-read supabase/migrations/0004_phase_b_persist_starter_analysis_hardening_test.ts
           deno test --allow-read supabase/migrations/0005_phase_b_starter_atomic_active_rpcs_test.ts
           deno test --allow-read supabase/migrations/0006_phase_b_starter_persist_idempotency_test.ts
           deno test --allow-read supabase/migrations/0007_phase_b_starter_persist_idempotency_enforcement_test.ts
           deno test --allow-read supabase/migrations/0008_phase_b_persist_idempotent_rpc_test.ts
+          deno test --allow-read supabase/migrations/0009_phase_c_bakes_test.ts
+          deno test --allow-read supabase/migrations/0010_phase_c_persist_loaf_analysis_test.ts
+          deno test --allow-read supabase/migrations/0011_phase_c_persist_loaf_bake_idempotency_test.ts
 
       - name: Upload build/test logs and E2E artifacts
         if: always()

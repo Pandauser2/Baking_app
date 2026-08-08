@@ -4,6 +4,11 @@ enum UITestingBootstrap {
     static let argument = "-uiTesting"
     static let populatedTimelineArgument = "-uiTestingTimelinePopulated"
     static let seedAnalysisResultArgument = "-uiTestingSeedAnalysisResult"
+    static let loafBaselineArgument = "-uiTestingLoafBaseline"
+    static let loafProcessComparisonArgument = "-uiTestingLoafProcessComparison"
+    static let loafFullComparisonArgument = "-uiTestingLoafFullComparison"
+    static let loafAnalyzeFailArgument = "-uiTestingLoafAnalyzeFail"
+    static let loafAutoAnalyzeArgument = "-uiTestingLoafAutoAnalyze"
 
     static var isEnabled: Bool {
         ProcessInfo.processInfo.arguments.contains(argument)
@@ -17,8 +22,30 @@ enum UITestingBootstrap {
         ProcessInfo.processInfo.arguments.contains(seedAnalysisResultArgument)
     }
 
+    static var loafBaselineMode: Bool {
+        ProcessInfo.processInfo.arguments.contains(loafBaselineArgument)
+    }
+
+    static var loafProcessComparisonMode: Bool {
+        ProcessInfo.processInfo.arguments.contains(loafProcessComparisonArgument)
+    }
+
+    static var loafFullComparisonMode: Bool {
+        ProcessInfo.processInfo.arguments.contains(loafFullComparisonArgument)
+    }
+
+    static var loafAnalyzeShouldFail: Bool {
+        ProcessInfo.processInfo.arguments.contains(loafAnalyzeFailArgument)
+    }
+
+    static var loafAutoAnalyze: Bool {
+        ProcessInfo.processInfo.arguments.contains(loafAutoAnalyzeArgument)
+    }
+
     static let userID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
     static let starterID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    static let bakeAID = UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!
+    static let bakeBID = UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!
 
     static func makeStarter() -> Starter {
         Starter(
@@ -214,6 +241,258 @@ struct UITestingStarterRepository: StarterRepository {
             outcome: outcome.rawValue,
             createdAt: Date()
         )
+    }
+
+    func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        URL(string: "https://example.com/\(path)")!
+    }
+}
+
+final class UITestingBakeRepository: BakeRepository {
+    private let starterRepository: StarterRepository
+    private var bakes: [Bake] = []
+
+    init(starterRepository: StarterRepository) {
+        self.starterRepository = starterRepository
+    }
+
+    func seedForUITestingIfNeeded() {
+        let now = Date(timeIntervalSince1970: 1_720_000_000)
+        func makeBake(id: UUID, name: String, bakedAt: Date, hydration: Double) -> Bake {
+            Bake(
+                id: id,
+                userID: UITestingBootstrap.userID,
+                starterID: UITestingBootstrap.starterID,
+                bakedAt: bakedAt,
+                name: name,
+                doughHydrationPercent: hydration,
+                bulkFermentationMinutes: 240,
+                finalProofMinutes: 120,
+                mixingMethod: BakeMixingMethod.hand.rawValue,
+                shapingMethod: BakeShapingMethod.boule.rawValue,
+                ovenTemperatureCelsius: 230,
+                bakingTimeMinutes: 40,
+                resultRating: 4,
+                fermentationTemperatureCelsius: 24,
+                fermentationTemperatureSource: .room,
+                retardationMinutes: nil,
+                numberOfFolds: nil,
+                steamingMethod: nil,
+                flourNotes: nil,
+                notes: nil,
+                createdAt: bakedAt,
+                updatedAt: bakedAt
+            )
+        }
+
+        if UITestingBootstrap.loafBaselineMode {
+            bakes = [makeBake(id: UITestingBootstrap.bakeAID, name: "Baseline Bake", bakedAt: now, hydration: 75)]
+        } else if UITestingBootstrap.loafProcessComparisonMode || UITestingBootstrap.loafFullComparisonMode {
+            bakes = [
+                makeBake(id: UITestingBootstrap.bakeBID, name: "Second Bake", bakedAt: now.addingTimeInterval(86_400), hydration: 78),
+                makeBake(id: UITestingBootstrap.bakeAID, name: "First Bake", bakedAt: now, hydration: 72),
+            ]
+        }
+    }
+
+    func listBakes() async throws -> [Bake] {
+        bakes.sorted { $0.bakedAt > $1.bakedAt }
+    }
+
+    func fetchBake(bakeID: UUID) async throws -> Bake {
+        guard let bake = bakes.first(where: { $0.id == bakeID }) else {
+            throw AppError.unknown("Bake not found")
+        }
+        return bake
+    }
+
+    func createBake(_ input: BakeCreateInput) async throws -> Bake {
+        let validated = try BakeValidation.validate(input)
+        _ = try await starterRepository.fetchStarter(starterID: validated.starterID)
+        let now = Date()
+        let bake = Bake(
+            id: UUID(),
+            userID: UITestingBootstrap.userID,
+            starterID: validated.starterID,
+            bakedAt: validated.bakedAt,
+            name: validated.name,
+            doughHydrationPercent: validated.doughHydrationPercent,
+            bulkFermentationMinutes: validated.bulkFermentationMinutes,
+            finalProofMinutes: validated.finalProofMinutes,
+            mixingMethod: validated.mixingMethod,
+            shapingMethod: validated.shapingMethod,
+            ovenTemperatureCelsius: validated.ovenTemperatureCelsius,
+            bakingTimeMinutes: validated.bakingTimeMinutes,
+            resultRating: validated.resultRating,
+            fermentationTemperatureCelsius: validated.fermentationTemperatureCelsius,
+            fermentationTemperatureSource: validated.fermentationTemperatureSource,
+            retardationMinutes: validated.retardationMinutes,
+            numberOfFolds: validated.numberOfFolds,
+            steamingMethod: validated.steamingMethod,
+            flourNotes: validated.flourNotes,
+            notes: validated.notes,
+            createdAt: now,
+            updatedAt: now
+        )
+        bakes.insert(bake, at: 0)
+        return bake
+    }
+}
+
+final class UITestingLoafAnalysisRepository: LoafAnalysisRepository {
+    private let bakeRepository: UITestingBakeRepository
+    private var analysesByBake: [UUID: CanonicalLoafAnalysis] = [:]
+    private var persistedByPath: [String: (bakeID: UUID, ids: PersistedLoafAnalysisIDs)] = [:]
+
+    init(bakeRepository: UITestingBakeRepository) {
+        self.bakeRepository = bakeRepository
+        seed()
+    }
+
+    private func seed() {
+        if UITestingBootstrap.loafBaselineMode {
+            analysesByBake[UITestingBootstrap.bakeAID] = makeCanonical(
+                bakeID: UITestingBootstrap.bakeAID,
+                path: "uitest/bake-baseline.jpg",
+                overall: 74,
+                crumb: 72,
+                crust: 76,
+                spring: 70
+            )
+        }
+        if UITestingBootstrap.loafFullComparisonMode {
+            analysesByBake[UITestingBootstrap.bakeAID] = makeCanonical(
+                bakeID: UITestingBootstrap.bakeAID,
+                path: "uitest/bake-a.jpg",
+                overall: 70,
+                crumb: 68,
+                crust: 72,
+                spring: 69
+            )
+        }
+    }
+
+    private func makeCanonical(
+        bakeID: UUID,
+        path: String,
+        overall: Int,
+        crumb: Int,
+        crust: Int,
+        spring: Int,
+        comparison: LoafComparisonSnapshot? = nil
+    ) -> CanonicalLoafAnalysis {
+        let recommendation = "Increase steam"
+        let snapshot = comparison ?? LoafComparisonSnapshot(
+            comparisonMode: .baseline,
+            previousBakeID: nil,
+            previousStarterID: nil,
+            starterChanged: false,
+            scoreDeltas: [],
+            processDeltas: [],
+            recommendation: recommendation
+        )
+        let analysis = LoafAIAnalysis(
+            crumbScore: crumb,
+            crustScore: crust,
+            ovenSpringScore: spring,
+            overallScore: overall,
+            strengths: ["Open crumb"],
+            improvements: ["Shape tension"],
+            nextSteps: [recommendation],
+            summary: "UITest loaf assessment.",
+            why: "UITest why explanation.",
+            comparison: snapshot
+        )
+        return CanonicalLoafAnalysis(
+            scanID: UUID(),
+            analysisID: UUID(),
+            bakeID: bakeID,
+            storagePath: path,
+            model: "uitest",
+            promptVersion: "v1",
+            confidence: analysis.confidence,
+            analysis: analysis,
+            renderedExplanation: analysis.summary,
+            createdAt: Date()
+        )
+    }
+
+    func uploadImage(_ data: Data, userID: UUID) async throws -> String {
+        "\(userID.uuidString.lowercased())/2026/08/\(UUID().uuidString.lowercased()).jpg"
+    }
+
+    func analyzeLoaf(
+        imagePath: String,
+        promptVersion: String,
+        context: LoafAnalyzeContext?
+    ) async throws -> LoafAnalyzeResult {
+        if UITestingBootstrap.loafAnalyzeShouldFail {
+            throw AppError.analysisFailed
+        }
+        let mode = context?.comparisonMode ?? .baseline
+        let why: String
+        switch mode {
+        case .baseline:
+            why = "Establishing baseline for future comparisons."
+        case .processComparison:
+            why = "Process changed; visual comparison unavailable."
+        case .fullComparison:
+            why = "Scores and process shifted versus previous bake."
+        }
+        return LoafAnalyzeResult(
+            model: "uitest",
+            promptVersion: promptVersion,
+            analysis: LoafAIAnalysis(
+                crumbScore: 78,
+                crustScore: 80,
+                ovenSpringScore: 74,
+                overallScore: 77,
+                strengths: ["Better crumb"],
+                improvements: ["More steam"],
+                nextSteps: ["Add steam for first 15 minutes"],
+                summary: "Solid loaf for UITest \(mode.rawValue).",
+                why: why
+            )
+        )
+    }
+
+    func persistLoafAnalysis(
+        bakeID: UUID,
+        imagePath: String,
+        result: LoafAnalyzeResult,
+        qualityScore: Double?,
+        qualityIssue: String?
+    ) async throws -> PersistedLoafAnalysisIDs {
+        if let existing = persistedByPath[imagePath] {
+            if existing.bakeID != bakeID {
+                throw AppError.unknown(LoafPersistMismatchError.storagePathLinkedToDifferentBake.errorDescription ?? "mismatch")
+            }
+            return existing.ids
+        }
+        let ids = PersistedLoafAnalysisIDs(scanID: UUID(), analysisID: UUID())
+        persistedByPath[imagePath] = (bakeID, ids)
+        analysesByBake[bakeID] = CanonicalLoafAnalysis(
+            scanID: ids.scanID,
+            analysisID: ids.analysisID,
+            bakeID: bakeID,
+            storagePath: imagePath,
+            model: result.model,
+            promptVersion: result.promptVersion,
+            confidence: result.analysis.confidence,
+            analysis: result.analysis,
+            renderedExplanation: result.analysis.summary,
+            createdAt: Date()
+        )
+        return ids
+    }
+
+    func fetchHistory() async throws -> [LoafScan] { [] }
+
+    func fetchLoafAnalyses(forBakeID bakeID: UUID) async throws -> [CanonicalLoafAnalysis] {
+        if let analysis = analysesByBake[bakeID] {
+            return [analysis]
+        }
+        return []
     }
 
     func signedImageURL(path: String, expiresIn: TimeInterval) async throws -> URL {
